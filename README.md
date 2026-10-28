@@ -112,12 +112,6 @@ Cada cuerpo OpenArm es un robot con **dos brazos de 7 articulaciones** (izquierd
 | 301 (izq = `openarm_left_`, der = `openarm_right_`) | `sim_301.launch.py` | `./launcher.sh sim 301` o `ros2 launch launcher_robots_lab_robotica sim_301.launch.py` |
 | 302 | `sim_302.launch.py` | `./launcher.sh sim 302` o `ros2 launch launcher_robots_lab_robotica sim_302.launch.py` |
 
-Nombres (igual que en las parejas de UR, con el id del brazo en lugar del robot): grupos `robot_301_izq` y `gripper_301_izq` (y `301_der`), combinados `robots_301` y `grippers_301` (sin IK, solo objetivos articulares con tolerancia ~0,01 rad); articulaciones `301_izq_joint1`…`joint7` y `301_izq_finger_joint1` (`finger_joint2` es mimética); controladores `/robot_301_izq_joint_trajectory_controller/follow_joint_trajectory` y pinza `/robot_301_izq/gripper_action`.
-
-La pinza se maneja igual que la RG2: la acción `GripperCommand` en `/robot_<id_brazo>/gripper_action` recibe la **anchura total entre dedos en milímetros** (0 = cerrada, 146,2 = abierta del todo). El nodo `pinza_openarm` la convierte al ángulo de los dedos y se lo pasa al controlador nativo `gripper_action_controller`. Diferencias con la RG2: la anchura máxima es 146,2 mm (la conversión mm↔rad es lineal y aproximada ±8 mm según el punto de contacto) y en simulación la pinza arranca cerrada (la RG2 simulada arranca abierta).
-
-El robot real necesitaría `openarm_hardware`, la librería `openarm_can` y un bus CAN por brazo (301: `can0`/`can1`; 302: `can2`/`can3`); la configuración ya está en `robots.py`.
-
 ## 4. Método A: scripts `launcher` (recomendado la primera vez)
 
 El repositorio incluye un script que hace todo lo necesario. Solo se necesita Git y Docker.
@@ -342,7 +336,7 @@ ros2 launch launcher_robots_lab_robotica sim_301.launch.py        # OpenArm 301 
 - `dockerfiles/`: imagen basada en ROS 2 Jazzy + escritorio XFCE con noVNC (puerto 6081, contraseña `laboratorio`), multiarquitectura (x86_64/arm64). `docker-compose.yml` define los perfiles y los límites de recursos (`LAB_MEM`, `LAB_CPUS`).
 - `ros_workspace/src/launcher_robots_lab_robotica`: xacros (UR3e + RG2, con `ros2_control`), calibraciones por robot, configuración de MoveIt 2 y los lanzadores. `lanzador.py` genera el lanzamiento de un robot; `lanzador_doble.py` el de una pareja (SRDF, controladores y MoveIt combinados en una carpeta temporal); `lanzador_openarm.py` el de un cuerpo OpenArm (renombra los prefijos `openarm_left_`/`openarm_right_` del URDF y SRDF bimanuales, y genera SRDF, cinemática, límites y controladores). El nodo `pinza_openarm` sirve la acción de la pinza OpenArm en milímetros y publica la articulación mimética `finger_joint2`. Los archivos de `launch/` son envoltorios finos.
 - `ros_workspace/src/rg2_driver`: servidor de acción `GripperCommand` de la pinza RG2 (con `prefix` y `namespace` para las escenas dobles).
-- `ros_workspace/src/openarm_ros2`: paquetes de OpenArm importados del repositorio original. `openarm_description` (URDF/xacro y mallas) también está importado; `openarm_hardware` tiene un `COLCON_IGNORE` porque necesita `openarm_can` (solo hace falta para el robot real).
+- `ros_workspace/src/launcher_robots_lab_robotica/openarm/`: datos del OpenArm importados del repositorio original de Enactic (xacros y mallas del v2.0, pinza, envoltorio ZED, plantillas de MoveIt; ver `openarm/README.md`), con las rutas reescritas al paquete. Para el robot real hacen falta además el plugin `openarm_hardware` y la librería `openarm_can` (no están en el espacio de trabajo).
 - `launcher.sh` / `launcher.ps1` / `launcher.bat`: scripts multiplataforma (instalar Docker, `desktop`, `local`, `local_gpu`, `sim`, `robot`, `terminal`, `compilar`, `parar`).
 
 <!-- ## 10. Estado de verificación
@@ -387,8 +381,3 @@ cd ~/ros_workspace
 colcon build --symlink-install
 source install/setup.bash
 ```
-
-- `--symlink-install`: en lugar de copiar los archivos, crea enlaces simbólicos a `src/`. Los cambios en archivos Python, xacros, YAML y de lanzamiento se aplican sin recompilar (los paquetes de C++ sí necesitan recompilación).
-- `source install/setup.bash`: activa el espacio de trabajo en la terminal actual para que `ros2` encuentre los paquetes. Hay que repetirlo en cada terminal nueva y después de añadir paquetes nuevos.
-- `colcon build --packages-select <paquete>`: compila solo un paquete.
-- Si hay errores extraños tras muchos cambios, se pueden borrar `build/`, `install/` y `log/` y volver a compilar.
