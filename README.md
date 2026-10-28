@@ -105,7 +105,18 @@ Una pareja usa un único `move_group` y un único RViz. Los robots reales de una
 
 ### OpenArm (301 y 302)
 
-Cada cuerpo lleva dos brazos (`izq` y `der`). Solo existe la **simulación** (mock hardware): `sim_301.launch.py` y `sim_302.launch.py`. No están soportados por `launcher.sh`; se lanzan con `ros2 launch` (método B). El robot real necesitaría `openarm_hardware`, la librería `openarm_can` y un bus CAN por brazo (301: `can0`/`can1`; 302: `can2`/`can3`).
+Cada cuerpo OpenArm es un robot con **dos brazos de 7 articulaciones** (izquierdo y derecho) y una pinza cada uno. Solo existe la **simulación** (mock hardware): `sim_301.launch.py` y `sim_302.launch.py`.
+
+| Cuerpo | Simulación | Interfaz |
+|---|---|---|
+| 301 (izq = `openarm_left_`, der = `openarm_right_`) | `sim_301.launch.py` | `./launcher.sh sim 301` o `ros2 launch launcher_robots_lab_robotica sim_301.launch.py` |
+| 302 | `sim_302.launch.py` | `./launcher.sh sim 302` o `ros2 launch launcher_robots_lab_robotica sim_302.launch.py` |
+
+Nombres (igual que en las parejas de UR, con el id del brazo en lugar del robot): grupos `robot_301_izq` y `gripper_301_izq` (y `301_der`), combinados `robots_301` y `grippers_301` (sin IK, solo objetivos articulares con tolerancia ~0,01 rad); articulaciones `301_izq_joint1`…`joint7` y `301_izq_finger_joint1` (`finger_joint2` es mimética); controladores `/robot_301_izq_joint_trajectory_controller/follow_joint_trajectory` y pinza `/robot_301_izq/gripper_action`.
+
+La pinza se maneja igual que la RG2: la acción `GripperCommand` en `/robot_<id_brazo>/gripper_action` recibe la **anchura total entre dedos en milímetros** (0 = cerrada, 146,2 = abierta del todo). El nodo `pinza_openarm` la convierte al ángulo de los dedos y se lo pasa al controlador nativo `gripper_action_controller`. Diferencias con la RG2: la anchura máxima es 146,2 mm (la conversión mm↔rad es lineal y aproximada ±8 mm según el punto de contacto) y en simulación la pinza arranca cerrada (la RG2 simulada arranca abierta).
+
+El robot real necesitaría `openarm_hardware`, la librería `openarm_can` y un bus CAN por brazo (301: `can0`/`can1`; 302: `can2`/`can3`); la configuración ya está en `robots.py`.
 
 ## 4. Método A: scripts `launcher` (recomendado la primera vez)
 
@@ -141,14 +152,14 @@ En los PCs del laboratorio o personales con (Linux o WSL con X11) se puede usar 
 | `desktop` | Arranca el entorno de escritorio y lo abre en el navegador (noVNC) |
 | `local` | Arranca el entorno del laboratorio en la pantalla (solo Linux con X11) |
 | `local_gpu` | Igual que `local`, con GPU NVIDIA |
-| `sim <id>` | Lanza la simulación: `203`, `204`, `205`, `206`, `203-204` o `205-206` |
-| `robot <id>` | Lanza el robot real (o la pareja, sin probar) |
+| `sim <id>` | Lanza la simulación: UR `203`-`206`, parejas `203-204`/`205-206`, u OpenArm `301`/`302` |
+| `robot <id>` | Lanza el robot real UR (o la pareja, sin probar); los OpenArm aún no tienen robot real |
 | `terminal` | Abre una terminal dentro del contenedor |
 | `compilar` | Recompila el espacio de trabajo (`colcon build --symlink-install`) |
 | `parar` | Para el contenedor (conserva su contenido) |
 | `ayuda` | Muestra la ayuda |
 
-`sim` y `robot` ejecutan dentro del contenedor `ros2 launch launcher_robots_lab_robotica {sim|robot}_<id>.launch.py`. Tras modificar paquetes, ejecuta `compilar`. Los robots OpenArm (301, 302) no se pueden lanzar con el script (ver el método B).
+`sim` y `robot` ejecutan dentro del contenedor `ros2 launch launcher_robots_lab_robotica {sim|robot}_<id>.launch.py`. Tras modificar paquetes, ejecuta `compilar`.
 
 ## 5. Método B: manual
 
@@ -254,7 +265,7 @@ ros2 launch launcher_robots_lab_robotica sim_205_206.launch.py   # pareja (./lau
 ros2 launch launcher_robots_lab_robotica robot_206.launch.py      # robot real (./launcher.sh robot 203)
 ```
 ```bash
-ros2 launch launcher_robots_lab_robotica sim_301.launch.py        # OpenArm, solo con ros2 launch
+ros2 launch launcher_robots_lab_robotica sim_301.launch.py        # OpenArm 301 (./launcher.sh sim 301)
 ```
 
 ## 6. Problemas frecuentes
@@ -324,14 +335,14 @@ ros2 launch launcher_robots_lab_robotica sim_301.launch.py        # OpenArm, sol
 - El sistema de referencia raíz del robot es `world` (antes `base_link`).
 - Robots reales: `robot_203.launch.py` (203-206). Simulación: `sim_203.launch.py`. Parejas: `sim_203_204`, `sim_205_206` (ver la sección 3).
 - La pinza RG2 se maneja con el paquete `rg2_driver` (`simulate:=true` en simulación). Requiere `ur_rtde` (`pip`, ya incluido en la imagen). La articulación `joint0` se ha reorientado respecto a ROS 1 porque `tool0` de ROS 2 está girado respecto al de ROS 1.
-- Los ejemplos usan `rclpy` + `move_group` (acciones `move_action`/`execute_trajectory`) en lugar de `moveit_commander`. `ejemplos/control_robot.py` acepta un id de robot opcional (`ControlRobot("203")`) para las escenas dobles.
+- Los ejemplos usan `rclpy` + `move_group` (acciones `move_action`/`execute_trajectory`) en lugar de `moveit_commander`. `ejemplos/control_robot.py` acepta un id de robot opcional (`ControlRobot("203")`) para las escenas dobles de UR, y los ids de brazo OpenArm (`ControlRobot("301_izq")`, `"301_der"`, `"302_izq"`, `"302_der"`); el resto de la API es idéntica para los dos tipos de robot.
 
 ## 9. Arquitectura
 
 - `dockerfiles/`: imagen basada en ROS 2 Jazzy + escritorio XFCE con noVNC (puerto 6081, contraseña `laboratorio`), multiarquitectura (x86_64/arm64). `docker-compose.yml` define los perfiles y los límites de recursos (`LAB_MEM`, `LAB_CPUS`).
-- `ros_workspace/src/launcher_robots_lab_robotica`: xacros (UR3e + RG2, con `ros2_control`), calibraciones por robot, configuración de MoveIt 2 y los lanzadores. `lanzador.py` genera el lanzamiento de un robot; `lanzador_doble.py` el de una pareja (SRDF, controladores y MoveIt combinados en una carpeta temporal). Los archivos de `launch/` son envoltorios finos.
+- `ros_workspace/src/launcher_robots_lab_robotica`: xacros (UR3e + RG2, con `ros2_control`), calibraciones por robot, configuración de MoveIt 2 y los lanzadores. `lanzador.py` genera el lanzamiento de un robot; `lanzador_doble.py` el de una pareja (SRDF, controladores y MoveIt combinados en una carpeta temporal); `lanzador_openarm.py` el de un cuerpo OpenArm (renombra los prefijos `openarm_left_`/`openarm_right_` del URDF y SRDF bimanuales, y genera SRDF, cinemática, límites y controladores). El nodo `pinza_openarm` sirve la acción de la pinza OpenArm en milímetros y publica la articulación mimética `finger_joint2`. Los archivos de `launch/` son envoltorios finos.
 - `ros_workspace/src/rg2_driver`: servidor de acción `GripperCommand` de la pinza RG2 (con `prefix` y `namespace` para las escenas dobles).
-- `ros_workspace/src/openarm_ros2`: paquetes de OpenArm importados del repositorio original.
+- `ros_workspace/src/openarm_ros2`: paquetes de OpenArm importados del repositorio original. `openarm_description` (URDF/xacro y mallas) también está importado; `openarm_hardware` tiene un `COLCON_IGNORE` porque necesita `openarm_can` (solo hace falta para el robot real).
 - `launcher.sh` / `launcher.ps1` / `launcher.bat`: scripts multiplataforma (instalar Docker, `desktop`, `local`, `local_gpu`, `sim`, `robot`, `terminal`, `compilar`, `parar`).
 
 <!-- ## 10. Estado de verificación
