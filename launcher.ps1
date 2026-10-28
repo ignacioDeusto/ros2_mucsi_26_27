@@ -1,5 +1,5 @@
 ﻿# Utilidad del entorno de Robótica y Automatización Inteligente (Windows).
-# Uso: .\lab.ps1 <comando> [opciones]     (.\lab.ps1 ayuda para ver los comandos)
+# Uso: .\launcher.ps1 <comando> [opciones]     (.\launcher.ps1 ayuda para ver los comandos)
 param(
     [Parameter(Position = 0)][string]$Comando = "ayuda",
     [Parameter(Position = 1)][string]$Opcion = ""
@@ -13,14 +13,14 @@ $Compose = @("compose")
 function Fallo($msg) { Write-Host "ERROR: $msg" -ForegroundColor Red; exit 1 }
 
 function Comprobar-Docker {
-    if (-not (Get-Command docker -ErrorAction SilentlyContinue)) { Fallo "Docker no está instalado. Ejecuta: .\lab.bat instalar-docker" }
+    if (-not (Get-Command docker -ErrorAction SilentlyContinue)) { Fallo "Docker no está instalado. Ejecuta: .\launcher.bat instalar-docker" }
     docker info *> $null
     if ($LASTEXITCODE -ne 0) { Fallo "Docker no está en ejecución. Abre Docker Desktop, espera a que arranque y vuelve a intentarlo." }
 }
 
 function Servicio-Activo {
     $s = (docker @Compose ps --services --status running | Select-Object -First 1)
-    if (-not $s) { Fallo "No hay ningún contenedor en marcha. Ejecuta primero: .\lab.bat iniciar" }
+    if (-not $s) { Fallo "No hay ningún contenedor en marcha. Ejecuta primero: .\launcher.bat iniciar" }
     return $s
 }
 
@@ -72,7 +72,7 @@ function Iniciar {
     $url = "http://localhost:$Puerto/vnc.html?autoconnect=true&password=laboratorio&resize=scale"
     Write-Host "Escritorio: $url"
     Start-Process $url
-    Write-Host "Listo. Lanza una simulación con: .\lab.bat sim 203"
+    Write-Host "Listo. Lanza una simulación con: .\launcher.bat sim 203"
 }
 
 function Lanzar($tipo) {
@@ -85,7 +85,7 @@ function Lanzar($tipo) {
 
 function Ayuda {
     @"
-Uso: .\lab.bat <comando>
+Uso: .\launcher.bat <comando>
 
   instalar-docker        Instala Docker Desktop si no lo tienes
   iniciar                Construye (la primera vez) y arranca el entorno y abre el escritorio en el navegador

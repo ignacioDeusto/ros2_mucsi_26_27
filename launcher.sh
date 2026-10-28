@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # Utilidad del entorno de Robótica y Automatización Inteligente (Linux, macOS y WSL).
-# Uso: ./lab.sh <comando> [opciones]     (./lab.sh ayuda para ver los comandos)
+# Uso: ./launcher.sh <comando> [opciones]     (./launcher.sh ayuda para ver los comandos)
 set -euo pipefail
 cd "$(dirname "${BASH_SOURCE[0]}")"
 
@@ -10,7 +10,7 @@ COMPOSE=(docker compose)
 die() { echo "ERROR: $*" >&2; exit 1; }
 
 comprobar_docker() {
-    command -v docker >/dev/null 2>&1 || die "Docker no está instalado. Ejecuta: ./lab.sh instalar-docker"
+    command -v docker >/dev/null 2>&1 || die "Docker no está instalado. Ejecuta: ./launcher.sh instalar-docker"
     docker info >/dev/null 2>&1 || die "Docker está instalado pero no está en ejecución. Abre Docker Desktop (o inicia el servicio) y vuelve a intentarlo."
     docker compose version >/dev/null 2>&1 || die "Falta 'docker compose' (v2). Actualiza Docker."
 }
@@ -21,7 +21,7 @@ servicio_activo() {
         COMPOSE=(docker compose --profile local --profile local_gpu)
         SERVICIO=$("${COMPOSE[@]}" ps --services --status running 2>/dev/null | head -n1 || true)
     fi
-    [ -n "$SERVICIO" ] || die "No hay ningún contenedor en marcha. Ejecuta primero: ./lab.sh iniciar"
+    [ -n "$SERVICIO" ] || die "No hay ningún contenedor en marcha. Ejecuta primero: ./launcher.sh iniciar"
 }
 
 ros_cmd() {
@@ -59,7 +59,7 @@ cmd_instalar_docker() {
                 echo "Instala Docker Desktop desde https://www.docker.com/products/docker-desktop/ (elige Apple Silicon o Intel según tu Mac)."
             fi
             ;;
-        *) die "Sistema no soportado por este script. En Windows usa lab.bat instalar-docker" ;;
+        *) die "Sistema no soportado por este script. En Windows usa launcher.bat instalar-docker" ;;
     esac
 }
 
@@ -93,7 +93,7 @@ cmd_iniciar() {
         echo
         abrir_navegador
     fi
-    echo "Listo. Lanza una simulación con: ./lab.sh sim 203"
+    echo "Listo. Lanza una simulación con: ./launcher.sh sim 203"
 }
 
 cmd_compilar() {
@@ -125,7 +125,7 @@ cmd_lanzar() {
 
 cmd_ayuda() {
     cat <<'EOF'
-Uso: ./lab.sh <comando>
+Uso: ./launcher.sh <comando>
 
   instalar-docker        Instala Docker si no lo tienes
   iniciar [--lab|--lab-gpu]
