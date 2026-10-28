@@ -36,7 +36,7 @@ Ambos métodos usan las mismas imágenes y el mismo espacio de trabajo (`ros_wor
 4. Extensiones de VS Code **instaladas en el anfitrión**:
    - [Remote Development](https://marketplace.visualstudio.com/items?itemName=ms-vscode-remote.vscode-remote-extensionpack) (`ms-vscode-remote.vscode-remote-extensionpack`): incluye *Dev Containers*, que permite abrir o conectarse a un contenedor desde VS Code.
    - [Docker](https://marketplace.visualstudio.com/items?itemName=ms-azuretools.vscode-docker) (`ms-azuretools.vscode-docker`): permite ver, arrancar y parar contenedores desde VS Code.
-5. Opcional, solo para el perfil `local_gpu` (Linux con X11 y GPU NVIDIA): [NVIDIA Container Toolkit](https://docs.nvidia.com/datacenter/cloud-native/container-toolkit/install-guide.html) y los drivers de NVIDIA.
+5. Opcional, para el perfil `local_gpu` (Linux con X11): con gráfica **AMD o Intel** no hace falta nada (el contenedor usa Mesa); con gráfica **NVIDIA**, [NVIDIA Container Toolkit](https://docs.nvidia.com/datacenter/cloud-native/container-toolkit/install-guide.html) y sus drivers. En **WSL2** no hace falta nada: la GPU se usa vía DirectX (`/dev/dxg`) y `launcher.sh` lo detecta.
 
 ### Dentro del contenedor
 
@@ -50,7 +50,7 @@ Si abres el repositorio con *Dev Containers: Reopen in Container* (usa `.devcont
 ### Sistema
 
 - **Linux / macOS / Windows**: Docker y VS Code funcionan en todos ellos, aunque algunas características varían (ver los perfiles).
-- **GPU** (opcional): solo Linux con X11 y una GPU NVIDIA compatible.
+- **GPU** (opcional): solo Linux con X11. Funciona con NVIDIA (requiere `nvidia-container-toolkit`), AMD e Intel (Mesa, sin nada extra) y en WSL2 (DirectX/WSLg). Sin GPU se usa renderizado por software (RViz funciona, más lento).
 
 ## 2. Perfiles de Docker
 
@@ -61,7 +61,7 @@ El archivo `docker-compose.yml` define tres servicios. Los nombres de los servic
 | Perfil de Compose | (por defecto) | `local` | `local_gpu` |
 | Dónde funciona | Windows, macOS, Linux; x86 y ARM | Linux con X11 (o WSL) | Linux con X11 (o WSL) |
 | Cómo se ve la interfaz gráfica | En el navegador (noVNC): http://localhost:6081, contraseña `laboratorio` | En la pantalla del equipo | En la pantalla del equipo |
-| GPU NVIDIA | No | No | Sí |
+| Aceleración gráfica | No | No (software) | Sí (NVIDIA, AMD/Intel o WSL2 vía DirectX) |
 | Red | Puertos 6081 (noVNC) y 5901 (VNC) | `network_mode: host`, `privileged` | `network_mode: host`, `privileged` |
 | Límites de recursos | 8 GB y 4 CPUs (`LAB_MEM`, `LAB_CPUS`) | Sin límites | Sin límites |
 | Imagen | `mucsi_26_27_desktop_novnc` | `local` | `local_gpu` |
@@ -70,16 +70,37 @@ El archivo `docker-compose.yml` define tres servicios. Los nombres de los servic
 **¿Cuál uso?**
 
 - En un PC MAC, `desktop`, siempre.
-- En un PC con WSL o Linux, sin NVIDIA: `local`. Con NVIDIA y `nvidia-container-toolkit`: `local_gpu`.
-- En un PC del laboratorio sin NVIDIA: `local`. Con NVIDIA y `nvidia-container-toolkit`: `local_gpu`.
+- En un PC con WSL o Linux: `local` para uso normal; `local_gpu` si quieres aceleración gráfica (con NVIDIA requiere `nvidia-container-toolkit`; con AMD/Intel funciona sin nada extra; en WSL2 vía DirectX).
+- En un PC del laboratorio: `local` para uso normal; `local_gpu` si quieres aceleración gráfica (con NVIDIA requiere `nvidia-container-toolkit`; con AMD/Intel funciona sin nada extra; en WSL2 vía DirectX).
 - Para conectarte al robot real desde Windows o macOS no se publican los puertos del driver (50030-50062); hazlo desde un PC del laboratorio o Linux.
 
 Los perfiles `local` y `local_gpu` requieren:
 
 - Sistema anfitrión Linux (o WSL) con el sistema de ventanas X.
-- (`local_gpu`) Gráfica NVIDIA con `nvidia-container-toolkit` y sus drivers.
+- (`local_gpu`) Una gráfica: **AMD o Intel** funcionan sin instalar nada (Mesa del contenedor); **NVIDIA** necesita `nvidia-container-toolkit` y sus drivers; en **WSL2** no hace falta nada (usa DirectX de Windows vía WSLg).
 
 Solo se usa un perfil a la vez. Solo `./ros_workspace` se comparte con el anfitrión (en `/home/laboratorio/ros_workspace`); el usuario del contenedor es `laboratorio` (uid 1000). `ejemplos/` **no** está montado en el contenedor.
+
+### Aceleración gráfica (`local_gpu`)
+
+`local_gpu` funciona con cualquier fabricante. Cómo lo consigue:
+
+| Gráfica | Vía | Requisito |
+|---|---|---|
+| NVIDIA | `docker-compose.nvidia.yml` (inyecta las librerías del driver) | `nvidia-container-toolkit` en el anfitrión (en WSL2 lo gestiona Docker Desktop) |
+| AMD / Intel | Mesa del contenedor (drivers `radeonsi`/`iris`) contra el driver del kernel del anfitrión (`/dev/dri`) | Nada |
+| WSL2 (Intel/AMD/NVIDIA) | `/dev/dxg` + librerías de DirectX de WSLg, con el driver `d3d12` de Mesa | `docker-compose.wsl.yml` (monta `/usr/lib/wsl/lib` y `/usr/lib/wsl/drivers`, y fija `GALLIUM_DRIVER=d3d12`) |
+
+`./launcher.sh local_gpu` detecta el caso y aplica los overrides solos. Para comprobarlo, dentro del contenedor:
+
+```bash
+glxinfo -B        # mira "OpenGL renderer string"
+```
+
+- `D3D12 (Intel(R) Arc(TM) 140T GPU (16GB))`, OpenGL 4.6 — **WSL2**: verificado en el portátil del laboratorio (Core Ultra 7 255H) dentro del contenedor, con la Mesa 25.2.8 de Ubuntu 24.04.
+- `Intel(R) Arc ...` / `AMD Radeon ...` — Linux nativo (Mesa, drivers `iris`/`radeonsi`). Las GPUs muy recientes (p. ej. Arc B-series) necesitan Mesa ≥ 24.3; la imagen instala la Mesa actual de Ubuntu 24.04.
+- `NVIDIA ...` — NVIDIA con toolkit.
+- `llvmpipe (LLVM ...)` — **renderizado por software**: RViz funciona pero va lento. Con NVIDIA, instala el toolkit; en WSL2, ejecuta `wsl --update` en PowerShell, comprueba que el driver de la GPU de Windows soporta WDDM 2.9+ y que `GALLIUM_DRIVER=d3d12` está aplicado (lo fija `docker-compose.wsl.yml`); en Linux nativo, actualiza los drivers del anfitrión.
 
 ## 3. Robots disponibles
 
@@ -145,7 +166,7 @@ En los PCs del laboratorio o personales con (Linux o WSL con X11) se puede usar 
 | `instalar-docker` | Instala Docker si no lo tienes |
 | `desktop` | Arranca el entorno de escritorio y lo abre en el navegador (noVNC) |
 | `local` | Arranca el entorno del laboratorio en la pantalla (solo Linux con X11) |
-| `local_gpu` | Igual que `local`, con GPU NVIDIA |
+| `local_gpu` | Igual que `local`, con aceleración gráfica (NVIDIA, AMD/Intel o WSL2) |
 | `sim <id>` | Lanza la simulación: UR `203`-`206`, parejas `203-204`/`205-206`, u OpenArm `301`/`302` |
 | `robot <id>` | Lanza el robot real UR (o la pareja, sin probar); los OpenArm aún no tienen robot real |
 | `terminal` | Abre una terminal dentro del contenedor |
@@ -182,13 +203,13 @@ docker compose up -d desktop
 Perfiles del laboratorio (`local` o `local_gpu`), solo Linux con X11:
 ```bash
 xhost +local:
-export XAUTHORITY="${XAUTHORITY:-$HOME/.Xauthority}" DISPLAY="${DISPLAY:-:0}"
+export DISPLAY="${DISPLAY:-:0}"
 docker compose --profile local up -d --build local        # o: --profile local_gpu ... local_gpu
 ```
-(Equivale a `./launcher.sh local` / `local_gpu`.)
+(Equivale a `./launcher.sh local` / `local_gpu`. No hace falta exportar `XAUTHORITY`: si tu entorno la define se usa, y si no el acceso lo autoriza `xhost +local:`.)
 
 > **Importante**
-> - `XAUTHORITY` debe estar definida, aunque solo vayas a ejecutar `docker compose build`: si no, Compose interpreta `0` como un volumen sin definir y falla la validación de todo el proyecto.
+> - Para `local_gpu`, con gráfica NVIDIA añade `-f docker-compose.yml -f docker-compose.nvidia.yml` y en WSL2 `-f docker-compose.wsl.yml` (cada fichero necesita su propio `-f`). `./launcher.sh local_gpu` detecta el caso y lo aplica automáticamente.
 > - No ejecutes `docker compose up --build` **sin indicar el servicio** con un perfil del laboratorio: `desktop` no tiene perfil, así que también se construiría y arrancaría.
 > - En ARM (Apple Silicon...) la primera construcción es más lenta porque `ur_rtde` se compila.
 
@@ -279,7 +300,7 @@ ros2 launch launcher_robots_lab_robotica sim_301.launch.py        # OpenArm 301 
 | Síntoma | Solución |
 |---|---|
 | Se construyen o arrancan dos entornos a la vez | No ejecutes `docker compose up --build` sin indicar el servicio: `desktop` no tiene perfil y se incluye siempre. Usa los comandos del launcher o indica el servicio. |
-| Fallo de validación del proyecto (incluso con `docker compose build`) | Con perfiles del laboratorio, define `XAUTHORITY` (p. ej. `export XAUTHORITY=$HOME/.Xauthority`). El launcher lo hace por ti. |
+| Fallo de validación del proyecto (incluso con `docker compose build`) | Comprueba que usas la versión actual del `docker-compose.yml`: el montaje de `XAUTHORITY` usa `/dev/null` como valor por defecto y no requiere exportar nada. Antes fallaba si `XAUTHORITY` no estaba definida. |
 | `--dry-run` modifica imágenes | `docker compose --dry-run` no hace de comprobación de solo lectura: sigue construyendo y etiquetando imágenes. |
 | Los perfiles `local` fallan fuera de Linux | Solo funcionan en Linux con X11 (o WSL). En otros sistemas usa `desktop`. |
 
@@ -294,7 +315,7 @@ ros2 launch launcher_robots_lab_robotica sim_301.launch.py        # OpenArm 301 
 | Síntoma | Solución |
 |---|---|
 | Pantalla en blanco en el navegador | Espera unos segundos y recarga; el escritorio tarda en arrancar. |
-| Con `local`/`local_gpu` no se abre ninguna ventana | Ejecuta `xhost +local:` y comprueba `DISPLAY` y `XAUTHORITY`. |
+| Con `local`/`local_gpu` no se abre ninguna ventana | Ejecuta `xhost +local:` y comprueba `DISPLAY`. |
 
 ### ROS 2
 

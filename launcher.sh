@@ -69,8 +69,37 @@ cmd_iniciar() {
     if [ "$servicio" != desktop ]; then
         [ "$(uname -s)" = Linux ] || die "Los perfiles de laboratorio solo funcionan en Linux con X11."
         xhost +local: >/dev/null 2>&1 || true
-        export XAUTHORITY="${XAUTHORITY:-$HOME/.Xauthority}" DISPLAY="${DISPLAY:-:0}"
+        # No hace falta exportar XAUTHORITY: docker-compose.yml usa el fallback
+        # ${XAUTHORITY:-/dev/null} y el acceso al servidor X lo autoriza xhost.
+        export DISPLAY="${DISPLAY:-:0}"
         COMPOSE=(docker compose --profile "$servicio")
+        if [ "$servicio" = local_gpu ]; then
+            local ficheros=()
+            # Gráfica NVIDIA: inyectar las librerías del driver con el toolkit.
+            # En WSL2 Docker Desktop gestiona la GPU sin toolkit.
+            if command -v nvidia-smi >/dev/null 2>&1; then
+                if grep -qi microsoft /proc/version || command -v nvidia-ctk >/dev/null 2>&1 || command -v nvidia-container-runtime >/dev/null 2>&1; then
+                    ficheros+=( docker-compose.nvidia.yml )
+                    echo "GPU NVIDIA detectada: aplicando docker-compose.nvidia.yml"
+                else
+                    echo "AVISO: hay drivers de NVIDIA pero falta nvidia-container-toolkit; RViz usará renderizado por software. Instálalo (docs.nvidia.com/datacenter/cloud-native/container-toolkit) o usa ./launcher.sh local"
+                fi
+            fi
+            # WSL2: la GPU se accede por /dev/dxg con el driver d3d12 de Mesa,
+            # que necesita las librerías de DirectX de WSLg.
+            if grep -qi microsoft /proc/version; then
+                ficheros+=( docker-compose.wsl.yml )
+                echo "WSL2 detectado: aplicando docker-compose.wsl.yml"
+            elif [ -d /dev/dri ]; then
+                echo "Gráfica AMD/Intel detectada vía /dev/dri (Mesa del contenedor)"
+            fi
+            if [ "${#ficheros[@]}" -gt 0 ]; then
+                COMPOSE+=( -f docker-compose.yml )
+                for f in "${ficheros[@]}"; do
+                    COMPOSE+=( -f "$f" )
+                done
+            fi
+        fi
     fi
     "${COMPOSE[@]}" up -d --build "$servicio"
     if ! "${COMPOSE[@]}" exec -T -u laboratorio "$servicio" test -f /home/laboratorio/ros_workspace/install/setup.bash; then
@@ -127,7 +156,7 @@ Uso: ./launcher.sh <comando>
   instalar-docker        Instala Docker si no lo tienes
   desktop                Arranca el entorno de escritorio y lo abre en el navegador (noVNC)
   local                  Arranca el entorno del laboratorio en la pantalla (solo Linux con X11)
-  local_gpu              Arranca el entorno del laboratorio con GPU NVIDIA (solo Linux con X11)
+  local_gpu              Igual que local, con aceleración gráfica (NVIDIA, AMD/Intel vía Mesa o WSL2 vía DirectX; solo Linux con X11)
   sim <203-206|301|302|203-204|205-206>
                          Lanza la simulación de un UR, de una pareja de UR o de un cuerpo OpenArm (Ctrl+C para detenerla)
   robot <203-206|203-204|205-206>

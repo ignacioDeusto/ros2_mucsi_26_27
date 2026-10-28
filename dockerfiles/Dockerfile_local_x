@@ -26,7 +26,9 @@ RUN apt-get update && apt-get install -y \
          xauth \
          git \
          htop \
-         sudo
+         sudo \
+         libgl1-mesa-dri \
+         mesa-utils
 
 RUN pip install --break-system-packages tensorboard
 

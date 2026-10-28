@@ -28,7 +28,13 @@ services:
       - RESOLUTION=1920x1080x24
       - NOVNC_PORT=6081
       - VNC_PORT=5901
-  # Perfiles opcionales solo para los PCs del laboratorio (Linux con X11)
+  # Perfiles opcionales solo para los PCs del laboratorio (Linux con X11).
+  # local_gpu es agnóstico del fabricante: con gráficas AMD/Intel basta la Mesa
+  # del contenedor (el driver del núcleo está en el anfitrión y /dev/dri es
+  # visible con privileged + /dev); en WSL2 se usa /dev/dxg + las librerías de
+  # WSLg (docker-compose.wsl.yml, lo añade launcher.sh). Para NVIDIA hay que
+  # inyectar las librerías del driver con nvidia-container-toolkit;
+  # launcher.sh lo detecta y añade docker-compose.nvidia.yml automáticamente.
   local_gpu:
     image: local_gpu
     build:
@@ -42,22 +48,12 @@ services:
     volumes:
       - ./ros_workspace:/home/laboratorio/ros_workspace
       - /tmp/.X11-unix:/tmp/.X11-unix
-      - ${XAUTHORITY:-0}:/root/.Xauthority
+      - ${XAUTHORITY:-/dev/null}:/root/.Xauthority:ro
       - /dev:/dev
     tmpfs:
       - /dev/shm:rw
     environment:
       - DISPLAY=${DISPLAY:-0}
-      - LD_LIBRARY_PATH=/usr/local/nvidia/lib64
-      - NVIDIA_VISIBLE_DEVICES=all
-      - NVIDIA_DRIVER_CAPABILITIES=compute,utility
-    deploy:
-      resources:
-        reservations:
-          devices:
-            - driver: nvidia
-              count: 1
-              capabilities: [gpu]
   local:
     image: local
     build:
@@ -71,7 +67,7 @@ services:
     volumes:
       - ./ros_workspace:/home/laboratorio/ros_workspace
       - /tmp/.X11-unix:/tmp/.X11-unix
-      - ${XAUTHORITY:-0}:/root/.Xauthority
+      - ${XAUTHORITY:-/dev/null}:/root/.Xauthority:ro
       - /dev:/dev
     tmpfs:
       - /dev/shm:rw

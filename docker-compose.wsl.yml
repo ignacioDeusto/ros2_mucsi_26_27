@@ -1,0 +1,19 @@
+# Extensión opcional de docker-compose.yml para WSL2 (Windows).
+# ./launcher.sh local_gpu la añade automáticamente si detecta WSL. En WSL2 la
+# GPU no se pasa por /dev/dri sino por /dev/dxg (DirectX/WSLg):
+# - /usr/lib/wsl y /usr/lib/wsl/drivers contienen las librerías de DirectX y
+#   los shims del driver de la GPU de Windows (Intel Arc, NVIDIA, AMD...) que
+#   usa el driver d3d12 de Mesa.
+# - GALLIUM_DRIVER=d3d12 hace que Mesa use d3d12 en lugar de llvmpipe (software).
+# Uso manual:
+#   docker compose --profile local_gpu -f docker-compose.yml -f docker-compose.wsl.yml up -d --build local_gpu
+# Comprobación: glxinfo -B debe mostrar "D3D12 (Intel(R) Arc.../NVIDIA/AMD)"
+# en lugar de "llvmpipe".
+services:
+  local_gpu:
+    volumes:
+      - /usr/lib/wsl/lib:/usr/lib/wsl/lib:ro
+      - /usr/lib/wsl/drivers:/usr/lib/wsl/drivers:ro
+    environment:
+      - GALLIUM_DRIVER=d3d12
+      - LD_LIBRARY_PATH=/usr/lib/wsl/lib

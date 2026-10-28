@@ -1,0 +1,21 @@
+# Extensión opcional de docker-compose.yml para gráficas NVIDIA.
+# ./launcher.sh local_gpu la añade automáticamente si detecta los drivers de
+# NVIDIA (nvidia-smi) y el toolkit (nvidia-ctk o nvidia-container-runtime); en
+# WSL2 con Docker Desktop no hace falta el toolkit. Uso manual:
+#   docker compose --profile local_gpu -f docker-compose.yml -f docker-compose.nvidia.yml up -d --build local_gpu
+# La capacidad `graphics` es necesaria para que se inyecten las librerías de
+# OpenGL/EGL de NVIDIA, que es lo que usa RViz (con solo compute/utility el
+# renderizado cae en software).
+services:
+  local_gpu:
+    environment:
+      - LD_LIBRARY_PATH=/usr/local/nvidia/lib64
+      - NVIDIA_VISIBLE_DEVICES=all
+      - NVIDIA_DRIVER_CAPABILITIES=compute,utility,graphics
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: 1
+              capabilities: [gpu]
