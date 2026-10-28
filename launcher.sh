@@ -109,7 +109,11 @@ cmd_terminal() {
 
 cmd_lanzar() {
     local tipo="$1" id="${2:-}"
-    [[ "$id" =~ ^(20[3-6]|203-204|205-206)$ ]] || die "Indica el robot: 203, 204, 205, 206 o una pareja (203-204, 205-206)"
+    if [ "$tipo" = sim ]; then
+        [[ "$id" =~ ^(20[3-6]|301|302|203-204|205-206)$ ]] || die "Indica el robot: 203, 204, 205, 206, 301, 302 o una pareja UR (203-204, 205-206)"
+    else
+        [[ "$id" =~ ^(20[3-6]|203-204|205-206)$ ]] || die "Indica el robot UR: 203, 204, 205, 206 o una pareja (203-204, 205-206). Los OpenArm (301, 302) todavía no están conectados al hardware real"
+    fi
     id="${id/-/_}"
     comprobar_docker
     servicio_activo; local s=$SERVICIO
@@ -124,10 +128,10 @@ Uso: ./launcher.sh <comando>
   desktop                Arranca el entorno de escritorio y lo abre en el navegador (noVNC)
   local                  Arranca el entorno del laboratorio en la pantalla (solo Linux con X11)
   local_gpu              Arranca el entorno del laboratorio con GPU NVIDIA (solo Linux con X11)
-  sim <203-206|203-204|205-206>
-                         Lanza la simulación de un robot o de una pareja (Ctrl+C para detenerla)
+  sim <203-206|301|302|203-204|205-206>
+                         Lanza la simulación de un UR, de una pareja de UR o de un cuerpo OpenArm (Ctrl+C para detenerla)
   robot <203-206|203-204|205-206>
-                         Lanza el robot real (o la pareja, sin probar)
+                         Lanza el robot real UR (o la pareja, sin probar); los OpenArm aún no tienen robot real
   terminal               Abre una terminal dentro del contenedor
   compilar               Recompila el espacio de trabajo (colcon build)
   parar                  Para el contenedor (conserva su contenido)

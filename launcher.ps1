@@ -69,7 +69,11 @@ function Iniciar($servicio) {
 }
 
 function Lanzar($tipo) {
-    if ($Opcion -notmatch '^(20[3-6]|203-204|205-206)$') { Fallo "Indica el robot: 203, 204, 205, 206 o una pareja (203-204, 205-206)" }
+    if ($tipo -eq "sim") {
+        if ($Opcion -notmatch '^(20[3-6]|301|302|203-204|205-206)$') { Fallo "Indica el robot: 203, 204, 205, 206, 301, 302 o una pareja UR (203-204, 205-206)" }
+    } else {
+        if ($Opcion -notmatch '^(20[3-6]|203-204|205-206)$') { Fallo "Indica el robot UR: 203, 204, 205, 206 o una pareja (203-204, 205-206). Los OpenArm (301, 302) todavía no están conectados al hardware real" }
+    }
     $id = $Opcion -replace '-', '_'
     Comprobar-Docker
     $s = Servicio-Activo
@@ -82,10 +86,10 @@ Uso: .\launcher.bat <comando>
 
   instalar-docker        Instala Docker Desktop si no lo tienes
   desktop                Construye (la primera vez) y arranca el entorno y abre el escritorio en el navegador
-  sim <203-206|203-204|205-206>
-                         Lanza la simulación de un robot o de una pareja (Ctrl+C para detenerla)
+  sim <203-206|301|302|203-204|205-206>
+                         Lanza la simulación de un UR, de una pareja de UR o de un cuerpo OpenArm (Ctrl+C para detenerla)
   robot <203-206|203-204|205-206>
-                         Lanza el robot real (o la pareja, sin probar)
+                         Lanza el robot real UR (o la pareja, sin probar); los OpenArm aún no tienen robot real
   terminal               Abre una terminal dentro del contenedor
   compilar               Recompila el espacio de trabajo (colcon build)
   parar                  Para el contenedor (conserva su contenido)
