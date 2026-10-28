@@ -21,7 +21,7 @@ servicio_activo() {
         COMPOSE=(docker compose --profile local --profile local_gpu)
         SERVICIO=$("${COMPOSE[@]}" ps --services --status running 2>/dev/null | head -n1 || true)
     fi
-    [ -n "$SERVICIO" ] || die "No hay ningún contenedor en marcha. Ejecuta primero: ./launcher.sh iniciar"
+    [ -n "$SERVICIO" ] || die "No hay ningún contenedor en marcha. Ejecuta primero: ./launcher.sh desktop"
 }
 
 ros_cmd() {
@@ -64,20 +64,13 @@ cmd_instalar_docker() {
 }
 
 cmd_iniciar() {
-    local servicio=desktop
-    case "${1:-}" in
-        "") ;;
-        --lab) servicio=local_laboratorio ;;
-        --lab-gpu) servicio=local_laboratorio_gpu ;;
-        *) die "Opción desconocida: $1 (usa --lab o --lab-gpu)" ;;
-    esac
+    local servicio="$1"
     comprobar_docker
     if [ "$servicio" != desktop ]; then
         [ "$(uname -s)" = Linux ] || die "Los perfiles de laboratorio solo funcionan en Linux con X11."
         xhost +local: >/dev/null 2>&1 || true
-        local perfil=local; [ "$servicio" = local_laboratorio_gpu ] && perfil=local_gpu
         export XAUTHORITY="${XAUTHORITY:-$HOME/.Xauthority}" DISPLAY="${DISPLAY:-:0}"
-        COMPOSE=(docker compose --profile "$perfil")
+        COMPOSE=(docker compose --profile "$servicio")
     fi
     "${COMPOSE[@]}" up -d --build "$servicio"
     if ! "${COMPOSE[@]}" exec -T -u laboratorio "$servicio" test -f /home/laboratorio/ros_workspace/install/setup.bash; then
@@ -128,9 +121,9 @@ cmd_ayuda() {
 Uso: ./launcher.sh <comando>
 
   instalar-docker        Instala Docker si no lo tienes
-  iniciar [--lab|--lab-gpu]
-                         Construye (la primera vez) y arranca el entorno y abre el escritorio en el navegador.
-                         --lab / --lab-gpu: perfiles del laboratorio (solo Linux con X11)
+  desktop                Arranca el entorno de escritorio y lo abre en el navegador (noVNC)
+  local                  Arranca el entorno del laboratorio en la pantalla (solo Linux con X11)
+  local_gpu              Arranca el entorno del laboratorio con GPU NVIDIA (solo Linux con X11)
   sim <203-206|203-204|205-206>
                          Lanza la simulación de un robot o de una pareja (Ctrl+C para detenerla)
   robot <203-206|203-204|205-206>
@@ -143,7 +136,7 @@ EOF
 
 case "${1:-ayuda}" in
     instalar-docker) cmd_instalar_docker ;;
-    iniciar) shift; cmd_iniciar "$@" ;;
+    desktop|local|local_gpu) cmd_iniciar "$1" ;;
     sim) cmd_lanzar sim "${2:-}" ;;
     robot) cmd_lanzar robot "${2:-}" ;;
     terminal) cmd_terminal ;;

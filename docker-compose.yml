@@ -29,8 +29,8 @@ services:
       - NOVNC_PORT=6081
       - VNC_PORT=5901
   # Perfiles opcionales solo para los PCs del laboratorio (Linux con X11)
-  local_laboratorio_gpu:
-    image: mucsi_26_27_local_laboratorio_gpu
+  local_gpu:
+    image: local_gpu
     build:
       context: .
       dockerfile: dockerfiles/Dockerfile_local_x
@@ -58,8 +58,8 @@ services:
             - driver: nvidia
               count: 1
               capabilities: [gpu]
-  local_laboratorio:
-    image: mucsi_26_27_local_laboratorio
+  local:
+    image: local
     build:
       context: .
       dockerfile: dockerfiles/Dockerfile_local_x

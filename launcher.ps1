@@ -20,7 +20,7 @@ function Comprobar-Docker {
 
 function Servicio-Activo {
     $s = (docker @Compose ps --services --status running | Select-Object -First 1)
-    if (-not $s) { Fallo "No hay ningún contenedor en marcha. Ejecuta primero: .\launcher.bat iniciar" }
+    if (-not $s) { Fallo "No hay ningún contenedor en marcha. Ejecuta primero: .\launcher.bat desktop" }
     return $s
 }
 
@@ -46,14 +46,7 @@ function Compilar {
     if ($LASTEXITCODE -ne 0) { Fallo "Falló la compilación." }
 }
 
-function Iniciar {
-    $servicio = "desktop"
-    switch ($Opcion) {
-        "" { }
-        "--lab" { $servicio = "local_laboratorio" }
-        "--lab-gpu" { $servicio = "local_laboratorio_gpu" }
-        default { Fallo "Opción desconocida: $Opcion" }
-    }
+function Iniciar($servicio) {
     if ($servicio -ne "desktop") { Fallo "Los perfiles de laboratorio solo funcionan en Linux con X11." }
     Comprobar-Docker
     docker @Compose up -d --build $servicio
@@ -88,7 +81,7 @@ function Ayuda {
 Uso: .\launcher.bat <comando>
 
   instalar-docker        Instala Docker Desktop si no lo tienes
-  iniciar                Construye (la primera vez) y arranca el entorno y abre el escritorio en el navegador
+  desktop                Construye (la primera vez) y arranca el entorno y abre el escritorio en el navegador
   sim <203-206|203-204|205-206>
                          Lanza la simulación de un robot o de una pareja (Ctrl+C para detenerla)
   robot <203-206|203-204|205-206>
@@ -96,12 +89,14 @@ Uso: .\launcher.bat <comando>
   terminal               Abre una terminal dentro del contenedor
   compilar               Recompila el espacio de trabajo (colcon build)
   parar                  Para el contenedor (conserva su contenido)
+
+  Los entornos local y local_gpu (pantalla del laboratorio) solo existen en Linux con X11.
 "@ | Write-Host
 }
 
 switch ($Comando) {
     "instalar-docker" { Instalar-Docker }
-    "iniciar" { Iniciar }
+    { $_ -in "desktop", "local", "local_gpu" } { Iniciar $_ }
     "sim" { Lanzar "sim" }
     "robot" { Lanzar "robot" }
     "terminal" { Comprobar-Docker; $s = Servicio-Activo; docker @Compose exec -u laboratorio $s bash }
