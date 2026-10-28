@@ -1,4 +1,16 @@
 #!/usr/bin/python3
+"""Control del robot del laboratorio con MoveIt 2 (mismo código para UR3e y OpenArm).
+
+El identificador del robot (ID_ROBOT abajo) selecciona el tipo:
+  - ""          -> el UR3e de la simulación individual (./launcher.sh sim 203)
+  - "203" ...   -> un UR3e de una escena doble (./launcher.sh sim 203-204, 205-206)
+  - "301_izq" / "301_der"   -> brazo izquierdo/derecho del cuerpo OpenArm 301
+  - "302_izq" / "302_der"   -> brazo izquierdo/derecho del cuerpo OpenArm 302
+                   (./launcher.sh sim 301, ./launcher.sh sim 302)
+
+Las diferencias entre robots (número de articulaciones, efector final, acción de la
+pinza...) están en la tabla TIPOS_ROBOT; el resto del código no cambia.
+"""
 
 import copy
 import threading
@@ -29,29 +41,71 @@ from shape_msgs.msg import SolidPrimitive
 from tf2_ros import Buffer, TransformListener
 
 SISTEMA_REFERENCIA = "world"  # En ROS 2 el sistema de referencia raíz del robot es "world"
-GRUPO = "robot"
-EFECTOR_FINAL = "wrist_3_link"
-ARTICULACIONES = ["shoulder_pan_joint", "shoulder_lift_joint", "elbow_joint",
-                  "wrist_1_joint", "wrist_2_joint", "wrist_3_joint"]
+
+# Tipos de robot del laboratorio
+UR = "UR"
+OPENARM = "OPENARM"
+
+# Brazos OpenArm (cada cuerpo lleva dos brazos que comparten el equipo)
+BRAZOS_OPENARM = {"301_izq", "301_der", "302_izq", "302_der"}
+
+# Articulaciones y efector final de cada tipo de robot, sin prefijo
+ARTICULACIONES = {
+    UR: ["shoulder_pan_joint", "shoulder_lift_joint", "elbow_joint",
+         "wrist_1_joint", "wrist_2_joint", "wrist_3_joint"],
+    OPENARM: [f"joint{i}" for i in range(1, 8)],
+}
+EFECTOR_FINAL = {
+    UR: "wrist_3_link",      # Brida del UR, donde se monta la RG2
+    OPENARM: "grasp_frame",  # Punto de agarre entre los dedos de la pinza del OpenArm
+}
+# Acción de la pinza. En los dos casos command.position es la anchura total entre los
+# dedos en milímetros; el nodo de cada pinza hace la conversión interna que toque
+ACCION_PINZA = {
+    UR: "rg2_action_server",
+    OPENARM: "gripper_action",
+}
+# Anchura máxima de cada pinza (mm)
+ANCHURA_MAXIMA = {UR: 100.0, OPENARM: 146.2}
+# Pose inicial de cada tipo de robot (articulaciones en radianes). En el OpenArm la
+# posición de cero deja el brazo totalmente extendido hacia abajo (singular, no puede
+# bajar más), así que la pose inicial es la del SRDF "hands_up" (codo flexionado)
+POSICION_INICIAL = {
+    UR: [0, -pi / 2, -pi / 2, -pi / 2, pi / 2, 0],
+    OPENARM: [0.0, 0.0, 0.0, 1.5, 0.0, 0.0, 0.0],
+}
+# Desplazamiento de las trayectorias cartesianas del ejemplo (los OpenArm son más
+# pequeños que los UR3e; se usa un paso menor)
+DESPLAZAMIENTO = {UR: 0.1, OPENARM: 0.05}
+
 FACTOR_ESCALA = 0.1  # Velocidad y aceleración máximas (fracción de las máximas del robot)
+
+
+def tipo_de_robot(id_robot: str) -> str:
+    """Devuelve el tipo de robot a partir del identificador del brazo."""
+    return OPENARM if id_robot in BRAZOS_OPENARM else UR
 
 
 class ControlRobot(Node):
     """Control del robot con MoveIt 2 a través de sus acciones y servicios (move_group)."""
 
     def __init__(self, id_robot: str = "") -> None:
-        """id_robot: "" para un robot individual, o "203", "204"... en las escenas con dos robots."""
+        """id_robot: "" para un UR individual, "203"-"206" en las escenas dobles de UR, o
+        un brazo OpenArm ("301_izq", "301_der", "302_izq", "302_der")."""
         super().__init__("control_robot")
+        self.id_robot = id_robot
+        self.tipo = tipo_de_robot(id_robot)
         if id_robot:
             self.group_name = f"robot_{id_robot}"
-            self.efector_final = f"{id_robot}_{EFECTOR_FINAL}"
-            self.articulaciones = [f"{id_robot}_{j}" for j in ARTICULACIONES]
-            accion_pinza = f"robot_{id_robot}/rg2_action_server"
+            self.efector_final = f"{id_robot}_{EFECTOR_FINAL[self.tipo]}"
+            self.articulaciones = [f"{id_robot}_{j}" for j in ARTICULACIONES[self.tipo]]
+            accion_pinza = f"robot_{id_robot}/{ACCION_PINZA[self.tipo]}"
         else:
-            self.group_name = GRUPO
-            self.efector_final = EFECTOR_FINAL
-            self.articulaciones = list(ARTICULACIONES)
-            accion_pinza = "rg2_action_server"
+            self.group_name = "robot"
+            self.efector_final = EFECTOR_FINAL[self.tipo]
+            self.articulaciones = list(ARTICULACIONES[self.tipo])
+            accion_pinza = ACCION_PINZA[self.tipo]
+
         self.__estado_articulaciones = {}
 
         self.create_subscription(JointState, "/joint_states", self.__cb_joint_states, 10)
@@ -69,7 +123,7 @@ class ControlRobot(Node):
         self.ejecutor.add_node(self)
         threading.Thread(target=self.ejecutor.spin, daemon=True).start()
 
-        self.get_logger().info("Esperando a MoveIt (move_group)...")
+        self.get_logger().info(f"Robot {self.tipo} ({self.group_name}): esperando a MoveIt (move_group)...")
         self.move_group_client.wait_for_server()
         self.execute_client.wait_for_server()
         self.cartesian_client.wait_for_service()
@@ -91,6 +145,10 @@ class ControlRobot(Node):
 
     def articulaciones_actuales(self) -> list:
         return [self.__estado_articulaciones[j] for j in self.articulaciones]
+
+    def posicion_inicial(self) -> List[float]:
+        """Pose inicial del tipo de robot (los valores de POSICION_INICIAL con prefijo)."""
+        return list(POSICION_INICIAL[self.tipo])
 
     def __ir_a(self, restricciones: Constraints, wait: bool) -> bool:
         goal = MoveGroup.Goal()
@@ -114,6 +172,11 @@ class ControlRobot(Node):
         return resultado.error_code.val == MoveItErrorCodes.SUCCESS
 
     def mover_articulaciones(self, joint_goal: List[float], wait: bool = True) -> bool:
+        if len(joint_goal) != len(self.articulaciones):
+            self.get_logger().error(
+                f"Se esperaban {len(self.articulaciones)} articulaciones "
+                f"({self.tipo}) y se han recibido {len(joint_goal)}")
+            return False
         restricciones = Constraints()
         for nombre, valor in zip(self.articulaciones, joint_goal):
             restricciones.joint_constraints.append(JointConstraint(
@@ -161,7 +224,7 @@ class ControlRobot(Node):
         restricciones.orientation_constraints.append(restriccion_orientacion)
         return self.__ir_a(restricciones, wait)
 
-    def añadir_caja_a_escena_de_planificacion(self, pose_caja: Pose, name: str,
+    def añadir_caja_a_escena_de_planificación(self, pose_caja: Pose, name: str,
                                               tamaño: tuple = (.1, .1, .1)) -> None:
         caja = CollisionObject()
         caja.id = name
@@ -211,9 +274,13 @@ class ControlRobot(Node):
         pose_suelo = Pose()
         pose_suelo.position.z = -0.026
         pose_suelo.orientation.w = 1.0
-        self.añadir_caja_a_escena_de_planificacion(pose_suelo, "suelo", (2, 2, .05))
+        self.añadir_caja_a_escena_de_planificación(pose_suelo, "suelo", (2, 2, .05))
 
     def mover_pinza(self, anchura_dedos: float, fuerza: float) -> bool:
+        """Cierra o abre la pinza: anchura total entre los dedos en milímetros."""
+        if anchura_dedos < 0.0 or anchura_dedos > ANCHURA_MAXIMA[self.tipo]:
+            self.get_logger().warn(
+                f"Anchura {anchura_dedos} fuera de rango [0, {ANCHURA_MAXIMA[self.tipo]}] mm")
         self.gripper_action_client.wait_for_server()
         goal = GripperCommand.Goal()
         goal.command.position = anchura_dedos
@@ -228,16 +295,21 @@ class ControlRobot(Node):
 if __name__ == '__main__':
     rclpy.init()
 
-    # Crear el objeto de tipo robot
-    control = ControlRobot()
+    # Identificador del robot a controlar; ver la cabecera del fichero
+    ID_ROBOT = ""
 
-    pi_medios = pi / 2
-    # Mover el robot a articulaciones iniciales
-    control.mover_articulaciones([0, -pi_medios, -pi_medios, -pi_medios, pi_medios, 0])
+    # Crear el objeto de tipo robot
+    control = ControlRobot(ID_ROBOT)
+
+    # Mover el robot a articulaciones iniciales (cada tipo tiene su pose inicial)
+    control.mover_articulaciones(control.posicion_inicial())
+
+    # Desplazamiento de las trayectorias del ejemplo según el tamaño del robot
+    paso = DESPLAZAMIENTO[control.tipo]
 
     # Mover el robot a una pose
     pose_actual = control.pose_actual()
-    pose_actual.position.z -= 0.1
+    pose_actual.position.z -= paso
     control.mover_a_pose(pose_actual)
 
     # Mover el efector final del robot en línea recta a través de varias poses
@@ -245,21 +317,21 @@ if __name__ == '__main__':
 
     # Pose 1
     pose_actual = control.pose_actual()
-    pose_actual.position.z += 0.1
+    pose_actual.position.z += paso
     poses.append(copy.deepcopy(pose_actual))
 
     # Pose 2
-    pose_actual.position.y += 0.1
+    pose_actual.position.y += paso
     poses.append(copy.deepcopy(pose_actual))
 
     # Pose 3
-    pose_actual.position.x += 0.1
+    pose_actual.position.x += paso
     poses.append(copy.deepcopy(pose_actual))
 
     # Pose 4
-    pose_actual.position.x -= 0.1
-    pose_actual.position.y -= 0.1
-    pose_actual.position.z -= 0.1
+    pose_actual.position.x -= paso
+    pose_actual.position.y -= paso
+    pose_actual.position.z -= paso
     poses.append(copy.deepcopy(pose_actual))
 
     control.mover_trayectoria(poses)
