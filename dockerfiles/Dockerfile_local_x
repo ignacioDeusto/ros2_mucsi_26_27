@@ -36,6 +36,14 @@ RUN apt-get update && apt-get install -y --no-install-recommends cmake libboost-
     (pip install --break-system-packages ur_rtde || echo "AVISO: no se pudo instalar ur_rtde; la pinza real no estará disponible") && \
     rm -rf /var/lib/apt/lists/*
 
+# OpenCode 2 (agente de IA para terminal), siempre la última versión. Se instala
+# como root en /usr/local/bin para que esté disponible para cualquier usuario/shell.
+RUN curl -fsSL https://opencode.ai/v2/install -o /tmp/opencode-install.sh && \
+    bash /tmp/opencode-install.sh --no-modify-path && \
+    mv /root/.opencode/bin/opencode /usr/local/bin/opencode && \
+    rm -rf /tmp/opencode-install.sh /root/.opencode && \
+    opencode --version
+
 # La imagen base de Ubuntu 24.04 trae un usuario "ubuntu" con uid 1000
 RUN (userdel -r ubuntu || true) && \
     (groupdel ubuntu || true) && \
