@@ -285,7 +285,7 @@ def generar_lanzamiento_doble(ids, simulacion):
         executable="rviz2",
         name="rviz2_moveit",
         output="log",
-        arguments=["-d", str(config / "moveit.rviz")],
+        arguments=["-d", str(config / "moveit_ur_doble.rviz")],
         parameters=[
             {"robot_description": descripcion},
             moveit_config.robot_description_semantic,

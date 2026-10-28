@@ -60,7 +60,7 @@ def generate_launch_description():
         arguments=[
             "-d",
             PathJoinSubstitution(
-                [FindPackageShare("launcher_robots_lab_robotica"), "config", "moveit.rviz"]
+                [FindPackageShare("launcher_robots_lab_robotica"), "config", "moveit_ur.rviz"]
             ),
         ],
         parameters=[

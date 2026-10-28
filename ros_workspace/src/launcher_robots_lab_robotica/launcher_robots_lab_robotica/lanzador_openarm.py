@@ -381,7 +381,7 @@ def generar_lanzamiento_openarm(id_cuerpo, simulacion):
         executable="rviz2",
         name="rviz2_moveit",
         output="log",
-        arguments=["-d", str(compartido / "config" / "moveit.rviz")],
+        arguments=["-d", str(compartido / "config" / "moveit_openarm.rviz")],
         parameters=[
             {"robot_description": descripcion},
             moveit_config.robot_description_semantic,
