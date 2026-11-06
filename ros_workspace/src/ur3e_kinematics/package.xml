@@ -4,7 +4,7 @@
   <name>ur3e_kinematics</name>
   <version>0.0.0</version>
   <description>Extracción y análisis de datos cinemáticos (posición, velocidad y aceleración) del robot UR3e</description>
-  <maintainer email="markel.crespo@deusto.es">Markel</maintainer>
+  <maintainer email="markel.crespo@opendeusto.es">Markel</maintainer>
   <license>Apache-2.0</license>
 
   <depend>rclpy</depend>

@@ -14,7 +14,7 @@ setup(
     install_requires=['setuptools'],
     zip_safe=True,
     maintainer='Markel',
-    maintainer_email='markel.crespo@deusto.es',
+    maintainer_email='markel.crespo@opendeusto.es',
     description='Extracción y análisis de datos cinemáticos (posición, velocidad y aceleración) del robot UR3e',
     license='Apache-2.0',
     extras_require={

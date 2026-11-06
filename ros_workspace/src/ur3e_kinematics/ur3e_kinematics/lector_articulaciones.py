@@ -1,10 +1,21 @@
 #!/usr/bin/python3
-"""Nodo que lee el estado de las articulaciones del brazo UR3e y calcula
-su velocidad y aceleración."""
+"""Nodo que lee el estado de las articulaciones del brazo UR3e, calcula su
+velocidad y aceleración y guarda los datos de cada trayectoria en un CSV."""
+
+from pathlib import Path
 
 import rclpy
 from rclpy.node import Node
 from sensor_msgs.msg import JointState
+from std_msgs.msg import String
+
+from ur3e_kinematics.comunicacion import (
+    QOS_TRAYECTORIA,
+    SIN_TRAYECTORIA,
+    TOPIC_TRAYECTORIA_ACTUAL,
+)
+from ur3e_kinematics.exportador_csv import ExportadorCsv
+from ur3e_kinematics.muestra_cinematica import MuestraCinematica
 
 TOPIC_ESTADO_ARTICULACIONES = "/joint_states"
 TAMANO_COLA = 10
@@ -14,6 +25,14 @@ NANOSEGUNDOS_A_SEGUNDOS = 1e-9
 # El robot publica cada ~2 ms. Derivar con intervalos tan pequeños amplifica
 # el ruido, así que solo se procesa una muestra cada 10 ms (100 Hz).
 PERIODO_MUESTREO_S = 0.01
+
+# Por debajo de esta velocidad en todas las articulaciones se considera que el
+# robot está parado. En reposo, la derivada numérica no pasa de ~0.001 rad/s.
+UMBRAL_MOVIMIENTO_RAD_S = 0.005
+
+# Dentro del contenedor, ~/ros_workspace es la carpeta compartida con el host,
+# así que los CSV también se pueden abrir desde fuera
+DIRECTORIO_DATOS = Path.home() / "ros_workspace" / "datos_cinematicos"
 
 # Articulaciones del brazo en orden base -> muñeca.
 # En /joint_states llegan en otro orden y mezcladas con las de la pinza,
@@ -29,10 +48,11 @@ ARTICULACIONES_BRAZO = [
 
 
 class LectorArticulaciones(Node):
-    """Suscriptor a /joint_states que calcula la cinemática del brazo UR3e."""
+    """Suscriptor a /joint_states que calcula la cinemática del brazo UR3e
+    y la guarda separada por trayectoria, solo mientras el robot se mueve."""
 
     def __init__(self) -> None:
-        """Crea el nodo y la suscripción al topic de estado de las articulaciones."""
+        """Crea el nodo y las suscripciones al estado del robot y a la trayectoria actual."""
         super().__init__("lector_articulaciones")
         self.create_subscription(
             JointState, TOPIC_ESTADO_ARTICULACIONES, self._callback_estado, TAMANO_COLA
@@ -43,8 +63,58 @@ class LectorArticulaciones(Node):
         self._posiciones_anteriores: list[float] = []
         self._velocidades_anteriores: list[float] = []
 
+        # Saber qué trayectoria se ejecuta permite guardar sus datos por separado
+        self.create_subscription(
+            String, TOPIC_TRAYECTORIA_ACTUAL, self._callback_trayectoria, QOS_TRAYECTORIA
+        )
+        self._trayectoria_actual: str = SIN_TRAYECTORIA
+        self._muestras_por_trayectoria: dict[str, list[MuestraCinematica]] = {}
+        self._exportador = ExportadorCsv(DIRECTORIO_DATOS, ARTICULACIONES_BRAZO)
+
+        # Permite avisar por el log solo cuando el robot arranca o se para
+        self._robot_en_movimiento: bool = False
+
+    def finalizar(self) -> None:
+        """Cierra la trayectoria en curso, si la hay. Se llama al apagar el nodo.
+
+        El nodo de trayectorias termina justo después de anunciar el final de la
+        última trayectoria, y ese mensaje puede no llegar a tiempo.
+        """
+        if self._trayectoria_actual != SIN_TRAYECTORIA:
+            self._finalizar_trayectoria()
+            self._trayectoria_actual = SIN_TRAYECTORIA
+
+    def _callback_trayectoria(self, mensaje: String) -> None:
+        """Cambia la trayectoria en la que se guardan las muestras."""
+        nueva_trayectoria = mensaje.data
+        if nueva_trayectoria == self._trayectoria_actual:
+            return
+
+        if self._trayectoria_actual != SIN_TRAYECTORIA:
+            self._finalizar_trayectoria()
+
+        self._trayectoria_actual = nueva_trayectoria
+        # Se reinicia la derivación para no mezclar muestras de dos trayectorias
+        self._tiempo_anterior = None
+
+        if nueva_trayectoria != SIN_TRAYECTORIA:
+            self._muestras_por_trayectoria[nueva_trayectoria] = []
+            self.get_logger().info(f"Grabando trayectoria '{nueva_trayectoria}'")
+
+    def _finalizar_trayectoria(self) -> None:
+        """Exporta a CSV las muestras de la trayectoria que acaba de terminar."""
+        muestras = self._muestras_por_trayectoria[self._trayectoria_actual]
+        ruta = self._exportador.guardar(self._trayectoria_actual, muestras)
+        self.get_logger().info(
+            f"Trayectoria '{self._trayectoria_actual}' finalizada: "
+            f"{len(muestras)} muestras guardadas en {ruta}"
+        )
+
     def _callback_estado(self, mensaje: JointState) -> None:
-        """Procesa cada mensaje del brazo y calcula velocidad y aceleración."""
+        """Procesa cada mensaje del brazo, calcula velocidad y aceleración y lo guarda."""
+        # Fuera de una trayectoria no se guarda nada
+        if self._trayectoria_actual == SIN_TRAYECTORIA:
+            return
         if not self._es_mensaje_del_brazo(mensaje):
             return
 
@@ -63,7 +133,17 @@ class LectorArticulaciones(Node):
 
         velocidades = self._derivar(posiciones, self._posiciones_anteriores, intervalo)
         aceleraciones = self._derivar(velocidades, self._velocidades_anteriores, intervalo)
+        # Se recuerda siempre, aunque el robot esté quieto: la siguiente
+        # derivada necesita la muestra inmediatamente anterior
         self._guardar_muestra(tiempo, posiciones, velocidades)
+
+        # Ingesta inteligente: los periodos con el robot quieto se descartan
+        if not self._actualizar_estado_movimiento(velocidades):
+            return
+
+        self._muestras_por_trayectoria[self._trayectoria_actual].append(
+            MuestraCinematica(tiempo, posiciones, velocidades, aceleraciones)
+        )
 
         self.get_logger().info(
             f"\n  Posición (rad):        {self._formatear(posiciones)}"
@@ -79,6 +159,22 @@ class LectorArticulaciones(Node):
         self._tiempo_anterior = tiempo
         self._posiciones_anteriores = posiciones
         self._velocidades_anteriores = velocidades
+
+    def _actualizar_estado_movimiento(self, velocidades: list[float]) -> bool:
+        """Indica si el robot se está moviendo y avisa cuando arranca o se para.
+
+        Se considera que se mueve si alguna articulación supera el umbral.
+        """
+        en_movimiento = any(
+            abs(velocidad) > UMBRAL_MOVIMIENTO_RAD_S for velocidad in velocidades
+        )
+        if en_movimiento != self._robot_en_movimiento:
+            if en_movimiento:
+                self.get_logger().info("Robot en movimiento: grabando")
+            else:
+                self.get_logger().info("Robot parado: sin grabar")
+            self._robot_en_movimiento = en_movimiento
+        return en_movimiento
 
     @staticmethod
     def _es_mensaje_del_brazo(mensaje: JointState) -> bool:
@@ -125,8 +221,11 @@ def main() -> None:
         rclpy.spin(nodo)
     except KeyboardInterrupt:
         pass
-    nodo.destroy_node()
-    rclpy.try_shutdown()
+    finally:
+        # Al pulsar Ctrl+C se guarda la última trayectoria antes de destruir el nodo
+        nodo.finalizar()
+        nodo.destroy_node()
+        rclpy.try_shutdown()
 
 
 if __name__ == "__main__":
