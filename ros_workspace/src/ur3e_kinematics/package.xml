@@ -3,12 +3,18 @@
 <package format="3">
   <name>ur3e_kinematics</name>
   <version>0.0.0</version>
-  <description>TODO: Package description</description>
-  <maintainer email="laboratorio@todo.todo">laboratorio</maintainer>
+  <description>Extracción y análisis de datos cinemáticos (posición, velocidad y aceleración) del robot UR3e</description>
+  <maintainer email="markel.crespo@deusto.es">Markel</maintainer>
   <license>Apache-2.0</license>
 
   <depend>rclpy</depend>
   <depend>sensor_msgs</depend>
+  <depend>std_msgs</depend>
+  <depend>geometry_msgs</depend>
+  <depend>moveit_msgs</depend>
+  <depend>control_msgs</depend>
+  <depend>shape_msgs</depend>
+  <depend>tf2_ros</depend>
 
   <test_depend>ament_copyright</test_depend>
   <test_depend>ament_flake8</test_depend>

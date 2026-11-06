@@ -13,9 +13,9 @@ setup(
     ],
     install_requires=['setuptools'],
     zip_safe=True,
-    maintainer='laboratorio',
-    maintainer_email='laboratorio@todo.todo',
-    description='TODO: Package description',
+    maintainer='Markel',
+    maintainer_email='markel.crespo@deusto.es',
+    description='Extracción y análisis de datos cinemáticos (posición, velocidad y aceleración) del robot UR3e',
     license='Apache-2.0',
     extras_require={
         'test': [
@@ -25,6 +25,7 @@ setup(
     entry_points={
         'console_scripts': [
             'lector_articulaciones = ur3e_kinematics.lector_articulaciones:main',
+            'trayectorias = ur3e_kinematics.trayectorias:main',
         ],
     },
 )
