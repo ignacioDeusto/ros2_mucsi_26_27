@@ -9,11 +9,13 @@ import rclpy
 from geometry_msgs.msg import Pose
 from std_msgs.msg import String
 
+from ur3e_kinematics.comunicacion import (
+    QOS_TRAYECTORIA,
+    SIN_TRAYECTORIA,
+    TOPIC_TRAYECTORIA_ACTUAL,
+)
 from ur3e_kinematics.control_robot import ControlRobot
 
-TOPIC_TRAYECTORIA_ACTUAL = "/trayectoria_actual"
-TAMANO_COLA = 10
-SIN_TRAYECTORIA = ""  # Se publica entre trayectorias para indicar que no hay que grabar
 
 # Posturas articulares (rad) en orden base -> muñeca
 POSTURA_INICIAL = [0.0, -pi / 2, -pi / 2, -pi / 2, pi / 2, 0.0]
@@ -40,7 +42,7 @@ class EjecutorTrayectorias(ControlRobot):
         """Inicializa el control del robot y el publicador de la trayectoria actual."""
         super().__init__()
         self._publicador_trayectoria = self.create_publisher(
-            String, TOPIC_TRAYECTORIA_ACTUAL, TAMANO_COLA
+            String, TOPIC_TRAYECTORIA_ACTUAL, QOS_TRAYECTORIA
         )
 
     def ejecutar_todas(self) -> None:
