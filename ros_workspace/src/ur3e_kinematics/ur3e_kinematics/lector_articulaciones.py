@@ -5,6 +5,7 @@ velocidad y aceleración y guarda los datos de cada trayectoria en un CSV."""
 from pathlib import Path
 
 import rclpy
+from builtin_interfaces.msg import Time
 from rclpy.node import Node
 from sensor_msgs.msg import JointState
 from std_msgs.msg import String
@@ -16,8 +17,10 @@ from ur3e_kinematics.comunicacion import (
 )
 from ur3e_kinematics.exportador_csv import ExportadorCsv
 from ur3e_kinematics.muestra_cinematica import MuestraCinematica
+from ur3e_kinematics_interfaces.msg import EstadoCinematico
 
 TOPIC_ESTADO_ARTICULACIONES = "/joint_states"
+TOPIC_ESTADO_CINEMATICO = "/estado_cinematico"
 TAMANO_COLA = 10
 PERIODO_IMPRESION_S = 1.0  # Segundos entre impresiones, para no saturar la terminal
 NANOSEGUNDOS_A_SEGUNDOS = 1e-9
@@ -73,6 +76,11 @@ class LectorArticulaciones(Node):
 
         # Permite avisar por el log solo cuando el robot arranca o se para
         self._robot_en_movimiento: bool = False
+
+        # Publica posición, velocidad y aceleración juntas en un solo mensaje
+        self._publicador_estado = self.create_publisher(
+            EstadoCinematico, TOPIC_ESTADO_CINEMATICO, TAMANO_COLA
+        )
 
     def finalizar(self) -> None:
         """Cierra la trayectoria en curso, si la hay. Se llama al apagar el nodo.
@@ -141,9 +149,9 @@ class LectorArticulaciones(Node):
         if not self._actualizar_estado_movimiento(velocidades):
             return
 
-        self._muestras_por_trayectoria[self._trayectoria_actual].append(
-            MuestraCinematica(tiempo, posiciones, velocidades, aceleraciones)
-        )
+        muestra = MuestraCinematica(tiempo, posiciones, velocidades, aceleraciones)
+        self._muestras_por_trayectoria[self._trayectoria_actual].append(muestra)
+        self._publicar_estado(mensaje.header.stamp, muestra)
 
         self.get_logger().info(
             f"\n  Posición (rad):        {self._formatear(posiciones)}"
@@ -175,6 +183,21 @@ class LectorArticulaciones(Node):
                 self.get_logger().info("Robot parado: sin grabar")
             self._robot_en_movimiento = en_movimiento
         return en_movimiento
+
+    def _publicar_estado(self, sello: Time, muestra: MuestraCinematica) -> None:
+        """Publica la muestra en el mensaje personalizado EstadoCinematico.
+
+        Se reutiliza el sello de tiempo de /joint_states para que el mensaje
+        quede vinculado al instante real en que se midió.
+        """
+        estado = EstadoCinematico()
+        estado.header.stamp = sello
+        estado.trayectoria = self._trayectoria_actual
+        estado.nombres_articulaciones = ARTICULACIONES_BRAZO
+        estado.posiciones = muestra.posiciones
+        estado.velocidades = muestra.velocidades
+        estado.aceleraciones = muestra.aceleraciones
+        self._publicador_estado.publish(estado)
 
     @staticmethod
     def _es_mensaje_del_brazo(mensaje: JointState) -> bool:
