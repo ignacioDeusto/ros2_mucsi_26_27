@@ -25,21 +25,19 @@ TAMANO_COLA = 10
 PERIODO_IMPRESION_S = 1.0  # Segundos entre impresiones, para no saturar la terminal
 NANOSEGUNDOS_A_SEGUNDOS = 1e-9
 
-# El robot publica cada ~2 ms. Derivar con intervalos tan pequeños amplifica
-# el ruido, así que solo se procesa una muestra cada 10 ms (100 Hz).
-PERIODO_MUESTREO_S = 0.01
+# Derivar dos veces con muestras cada ~2 ms amplifica el ruido (picos de
+# 37 rad/s^2 con 10 ms). Con 50 ms se filtra sin perder detalle.
+PERIODO_MUESTREO_S = 0.05
 
 # Por debajo de esta velocidad en todas las articulaciones se considera que el
 # robot está parado. En reposo, la derivada numérica no pasa de ~0.001 rad/s.
 UMBRAL_MOVIMIENTO_RAD_S = 0.005
 
-# Dentro del contenedor, ~/ros_workspace es la carpeta compartida con el host,
-# así que los CSV también se pueden abrir desde fuera
+# Carpeta compartida con el host: los CSV se pueden abrir desde fuera
 DIRECTORIO_DATOS = Path.home() / "ros_workspace" / "datos_cinematicos"
 
-# Articulaciones del brazo en orden base -> muñeca.
-# En /joint_states llegan en otro orden y mezcladas con las de la pinza,
-# por eso siempre se buscan por nombre y nunca por posición en la lista.
+# Orden base -> muñeca. En /joint_states llegan desordenadas y con las de la
+# pinza, así que se buscan por nombre.
 ARTICULACIONES_BRAZO = [
     "shoulder_pan_joint",
     "shoulder_lift_joint",
@@ -64,7 +62,8 @@ class LectorArticulaciones(Node):
         # Última muestra procesada: hace falta para derivar numéricamente
         self._tiempo_anterior: float | None = None
         self._posiciones_anteriores: list[float] = []
-        self._velocidades_anteriores: list[float] = []
+        # None mientras aún no se ha podido calcular ninguna velocidad
+        self._velocidades_anteriores: list[float] | None = None
 
         # Saber qué trayectoria se ejecuta permite guardar sus datos por separado
         self.create_subscription(
@@ -77,7 +76,6 @@ class LectorArticulaciones(Node):
         # Permite avisar por el log solo cuando el robot arranca o se para
         self._robot_en_movimiento: bool = False
 
-        # Publica posición, velocidad y aceleración juntas en un solo mensaje
         self._publicador_estado = self.create_publisher(
             EstadoCinematico, TOPIC_ESTADO_CINEMATICO, TAMANO_COLA
         )
@@ -120,7 +118,6 @@ class LectorArticulaciones(Node):
 
     def _callback_estado(self, mensaje: JointState) -> None:
         """Procesa cada mensaje del brazo, calcula velocidad y aceleración y lo guarda."""
-        # Fuera de una trayectoria no se guarda nada
         if self._trayectoria_actual == SIN_TRAYECTORIA:
             return
         if not self._es_mensaje_del_brazo(mensaje):
@@ -129,10 +126,10 @@ class LectorArticulaciones(Node):
         tiempo = self._tiempo_del_mensaje(mensaje)
         posiciones = self._extraer_posiciones(mensaje)
 
-        # Primera muestra: aún no hay con qué comparar. Se asume que el robot
-        # parte del reposo, así que la velocidad inicial es cero.
+        # Primera muestra: no se supone reposo, porque el aviso de trayectoria
+        # puede llegar tarde con el robot ya en marcha.
         if self._tiempo_anterior is None:
-            self._guardar_muestra(tiempo, posiciones, [0.0] * len(posiciones))
+            self._guardar_muestra(tiempo, posiciones, None)
             return
 
         intervalo = tiempo - self._tiempo_anterior
@@ -140,10 +137,14 @@ class LectorArticulaciones(Node):
             return
 
         velocidades = self._derivar(posiciones, self._posiciones_anteriores, intervalo)
-        aceleraciones = self._derivar(velocidades, self._velocidades_anteriores, intervalo)
-        # Se recuerda siempre, aunque el robot esté quieto: la siguiente
-        # derivada necesita la muestra inmediatamente anterior
+        velocidades_anteriores = self._velocidades_anteriores
+        # Se recuerda aunque el robot esté quieto: la siguiente derivada la necesita
         self._guardar_muestra(tiempo, posiciones, velocidades)
+
+        # Segunda muestra: aún no hay velocidad anterior para la aceleración
+        if velocidades_anteriores is None:
+            return
+        aceleraciones = self._derivar(velocidades, velocidades_anteriores, intervalo)
 
         # Ingesta inteligente: los periodos con el robot quieto se descartan
         if not self._actualizar_estado_movimiento(velocidades):
@@ -161,7 +162,7 @@ class LectorArticulaciones(Node):
         )
 
     def _guardar_muestra(
-        self, tiempo: float, posiciones: list[float], velocidades: list[float]
+        self, tiempo: float, posiciones: list[float], velocidades: list[float] | None
     ) -> None:
         """Recuerda la muestra actual para usarla en el siguiente cálculo."""
         self._tiempo_anterior = tiempo
