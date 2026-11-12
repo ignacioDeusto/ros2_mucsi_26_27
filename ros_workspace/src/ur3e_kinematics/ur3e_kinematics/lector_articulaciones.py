@@ -2,11 +2,14 @@
 """Nodo que lee el estado de las articulaciones del brazo UR3e, calcula su
 velocidad y aceleración y guarda los datos de cada trayectoria en un CSV."""
 
+import signal
+import threading
 from pathlib import Path
 
 import rclpy
 from builtin_interfaces.msg import Time
 from rclpy.node import Node
+from rclpy.signals import SignalHandlerOptions
 from sensor_msgs.msg import JointState
 from std_msgs.msg import String
 
@@ -239,12 +242,16 @@ class LectorArticulaciones(Node):
 
 def main() -> None:
     """Punto de entrada del nodo."""
-    rclpy.init()
+    # Ctrl+C solo pide parar y el bucle termina en la siguiente vuelta. Si ROS
+    # cerrase el nodo de golpe, podría hacerlo a mitad de leer un mensaje de
+    # /joint_states y saltaría un RuntimeError.
+    rclpy.init(signal_handler_options=SignalHandlerOptions.NO)
     nodo = LectorArticulaciones()
+    parada = threading.Event()
+    signal.signal(signal.SIGINT, lambda _senal, _marco: parada.set())
     try:
-        rclpy.spin(nodo)
-    except KeyboardInterrupt:
-        pass
+        while not parada.is_set():
+            rclpy.spin_once(nodo, timeout_sec=0.1)
     finally:
         # Al pulsar Ctrl+C se guarda la última trayectoria antes de destruir el nodo
         nodo.finalizar()
