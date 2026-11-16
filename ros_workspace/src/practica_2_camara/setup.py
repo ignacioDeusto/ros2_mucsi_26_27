@@ -27,6 +27,7 @@ setup(
     },
     entry_points={
         'console_scripts': [
+            'capturar_imagenes = practica_2_camara.capturar_imagenes:main',
         ],
     },
 )
