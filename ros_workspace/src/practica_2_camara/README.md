@@ -2,6 +2,8 @@
 
 El paquete incluye un lanzador de `usb_cam` y un nodo que guarda una tanda de diez imágenes recibidas consecutivamente. La calibración y la corrección de imágenes quedan pendientes.
 
+En la raíz del repositorio están la [guía de cámara](../../../GUIA_CAMARA.md) y la [guía de calibración](../../../GUIA_CALIBRACION.md). El tablero de referencia está en `recursos/tablero_calibracion.png`.
+
 ## Compilar
 
 En el contenedor habitual, con el entorno de ROS cargado:

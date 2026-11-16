@@ -8,6 +8,7 @@ RUN apt-get update && apt-get install -y \
          ros-jazzy-ur \
          ros-jazzy-ur-robot-driver \
          ros-jazzy-usb-cam \
+         ros-jazzy-camera-calibration \
          ros-jazzy-image-tools \
          ros-jazzy-rqt-image-view \
          ros-jazzy-cv-bridge \
