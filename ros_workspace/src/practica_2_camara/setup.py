@@ -29,6 +29,7 @@ setup(
         'console_scripts': [
             'capturar_imagenes = practica_2_camara.capturar_imagenes:main',
             'tablero_simulado = practica_2_camara.tablero_simulado:main',
+            'corregir_imagen = practica_2_camara.corregir_imagen:main',
         ],
     },
 )
