@@ -91,10 +91,15 @@ Get-Content .\ros_workspace\calibracion\ost.yaml
 ```
 Obtenido: fx ≈ 642, fy ≈ 637, cx ≈ 324, cy ≈ 249 px; distorsión pequeña.
 
-**3.7 Corregir** (con 3.2 abierto) → publica `/camera/image_corregida`
+**3.7 Corregir** (con 3.2 abierto) → ventana original | corregida y topic `/camera/image_corregida`
 ```powershell
 docker exec -it -u laboratorio -e RMW_IMPLEMENTATION=rmw_cyclonedds_cpp mucsi-robotics-practice-02-desktop-1 bash -lc "source /opt/ros/jazzy/setup.bash && source /home/laboratorio/ros_workspace/install/setup.bash && ros2 run practica_2_camara corregir_imagen"
 ```
+Parámetros: `calibration_file`, `image_topic`, `output_topic`, `alpha` (0 recorta bordes negros, 1 conserva todo el campo de visión), `mostrar`. Para ver la corrección con claridad:
+```powershell
+docker exec -it -u laboratorio -e RMW_IMPLEMENTATION=rmw_cyclonedds_cpp mucsi-robotics-practice-02-desktop-1 bash -lc "source /opt/ros/jazzy/setup.bash && source /home/laboratorio/ros_workspace/install/setup.bash && ros2 run practica_2_camara corregir_imagen --ros-args -p alpha:=1.0"
+```
+Resultado: la webcam tiene poca distorsión; con `alpha:=0` la corregida solo sale ligeramente ampliada.
 
 ## 4. Cerrar
 Ctrl+C en todas las ventanas.
@@ -108,5 +113,7 @@ Ctrl+C en todas las ventanas.
 | `cannot open directory [/sys/class/video4linux/]` | El contenedor `desktop` no ve la cámara | Contenedor temporal de 3.2 |
 | Imagen negra; captura cancelada por imágenes idénticas | 640×360 no soportado | `image_width:=640 image_height:=480` |
 | El calibrador no detecta el tablero | Inclinado, sin margen blanco, reflejos | De frente, quieto, borde blanco, brillo moderado |
+| `FileNotFoundError: .../calibracion/ost.yaml` | Carpeta borrada al descartar cambios sin seguimiento | Repetir 3.6 (el `.tar.gz` sigue en `/tmp` del contenedor) y commitear `ost.yaml` |
+| `git status` marca archivos no tocados | Solo cambios de fin de línea (CRLF) | `git restore <archivo>`; nunca `git add .` |
 
 Captura, calibración y corrección: **misma resolución**. `calibrationdata.tar.gz` no se sube (contiene las imágenes).
