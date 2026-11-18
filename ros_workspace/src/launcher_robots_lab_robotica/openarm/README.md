@@ -69,7 +69,7 @@ Para actualizarlos hay que sustituir la carpeta por un commit nuevo, volver a ap
 
 2. **Conectar los adaptadores y alimentar los brazos.** Comprueba los nombres de las interfaces
    con `ip -brief link show type can`. El orden `can0`, `can1`... depende del orden de conexión
-   y tiene que coincidir con `robots.py`: 301 usa `can0` (izq) y `can1` (der), y 302 usa `can2`
+   y tiene que coincidir con `robots.py`: 301 usa `can1` (izq) y `can0` (der), y 302 usa `can2`
    (izq) y `can3` (der).
 
 3. **Levantar los buses CAN** en el anfitrión (usa `sudo`):

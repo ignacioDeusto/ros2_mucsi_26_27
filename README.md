@@ -110,7 +110,7 @@ Cada cuerpo OpenArm es un robot con **dos brazos de 7 articulaciones** (izquierd
 
 | Cuerpo | Brazos (`ControlRobot`) | Simulación | Robot real (**sin probar con el robot físico**) | Buses CAN (izq / der) |
 |---|---|---|---|---|
-| 301 | `301_izq`, `301_der` | `sim_301.launch.py` (`./launcher.sh sim 301`) | `robot_301.launch.py` (`./launcher.sh can 301` y `./launcher.sh robot 301`) | `can0` / `can1` |
+| 301 | `301_izq`, `301_der` | `sim_301.launch.py` (`./launcher.sh sim 301`) | `robot_301.launch.py` (`./launcher.sh can 301` y `./launcher.sh robot 301`) | `can1` / `can0` |
 | 302 | `302_izq`, `302_der` | `sim_302.launch.py` (`./launcher.sh sim 302`) | `robot_302.launch.py` (`./launcher.sh can 302` y `./launcher.sh robot 302`) | `can2` / `can3` |
 
 Los buses se configuran en `robots.py` (`ROBOTS_OPENARM`). Antes de lanzar el robot real hay que levantarlos en el anfitrión con `./launcher.sh can <id>` (CAN-FD, 1 Mbit/s y 5 Mbit/s de datos por defecto). **Al activarse, el plugin lleva los brazos a la posición cero**: deja espacio libre alrededor. Los pasos completos están en `ros_workspace/src/launcher_robots_lab_robotica/openarm/README.md`, sección "Robot real".
@@ -133,7 +133,7 @@ cd ros2_mucsi_26_27
 ./launcher.sh compilar
 ```
 
-**3. Comprobar los adaptadores** (anfitrión). Deben aparecer `can0` (brazo izquierdo) y `can1` (brazo derecho); si salen en otro orden, desconéctalos y conéctalos en orden:
+**3. Comprobar los adaptadores** (anfitrión). Deben aparecer `can1` (brazo izquierdo) y `can0` (brazo derecho); si salen en otro orden, desconéctalos y conéctalos en orden:
 
 ```bash
 ip -brief link show type can
