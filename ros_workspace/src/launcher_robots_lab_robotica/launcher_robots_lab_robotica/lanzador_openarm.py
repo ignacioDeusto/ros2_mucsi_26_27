@@ -212,8 +212,14 @@ def _config_controladores(ids):
         trayectoria = f"robot_{id_brazo}_joint_trajectory_controller"
         gestor[trayectoria] = {"type": "joint_trajectory_controller/JointTrajectoryController"}
         articulaciones = [f"{id_brazo}_{j}" for j in ARTICULACIONES_BRAZO]
-        restricciones = {"stopped_velocity_tolerance": 0.2, "goal_time": 0.0}
-        restricciones.update({j: {"trajectory": 0.2, "goal": 0.1} for j in articulaciones})
+        # goal_time: margen tras el final de la trayectoria para entrar en la tolerancia
+        # del objetivo. Con 0 el controlador espera indefinidamente si un brazo no llega
+        # (p. ej. un motor sin par) y bloquea todos los movimientos siguientes
+        restricciones = {"stopped_velocity_tolerance": 0.2, "goal_time": 1.0}
+        # goal 0.2: openarm_hardware controla con un PD (MIT) sin compensar la gravedad, así
+        # que en el robot real el codo queda ~0.1 rad por debajo de la consigna con el
+        # brazo levantado; con 0.1 la llegada falla aunque el brazo esté donde debe
+        restricciones.update({j: {"trajectory": 0.2, "goal": 0.2} for j in articulaciones})
         parametros[trayectoria] = {
             "ros__parameters": {
                 "joints": articulaciones,
@@ -257,13 +263,29 @@ def _config_moveit(ids):
             "allowed_execution_duration_scaling": 1.2,
             "allowed_goal_duration_margin": 0.5,
             "allowed_start_tolerance": 0.01,
-            "execution_duration_monitoring": False,
+            # Aborta una ejecución que dura más de lo previsto (con el escalado y margen
+            # de arriba) en lugar de esperar para siempre
+            "execution_duration_monitoring": True,
         },
         "moveit_simple_controller_manager": {
             "controller_names": list(controladores),
             **controladores,
         },
     }
+
+
+def _procesar_xacro(xacro_robot, cfg, fake):
+    return xacro.process_file(
+        str(xacro_robot),
+        mappings={
+            "robot_preset": "default_bimanual",
+            "emit_grasp_frame": "true",
+            "use_fake_hardware": "true" if fake else "false",
+            "left_can_interface": cfg["left_can_interface"],
+            "right_can_interface": cfg["right_can_interface"],
+            "can_fd": cfg["can_fd"],
+        },
+    )
 
 
 def generar_lanzamiento_openarm(id_cuerpo, simulacion):
@@ -280,17 +302,8 @@ def generar_lanzamiento_openarm(id_cuerpo, simulacion):
     openarm_moveit = datos_openarm / "moveit"
     carpeta = Path(tempfile.mkdtemp(prefix=f"openarm_{id_cuerpo}_"))
 
-    procesado = xacro.process_file(
-        str(datos_openarm / "assets" / "robot" / "openarm_v2.0" / "urdf" / "openarm_v20.urdf.xacro"),
-        mappings={
-            "robot_preset": "default_bimanual",
-            "emit_grasp_frame": "true",
-            "use_fake_hardware": "true" if simulacion else "false",
-            "left_can_interface": cfg["left_can_interface"],
-            "right_can_interface": cfg["right_can_interface"],
-            "can_fd": cfg["can_fd"],
-        },
-    )
+    xacro_robot = datos_openarm / "assets" / "robot" / "openarm_v2.0" / "urdf" / "openarm_v20.urdf.xacro"
+    procesado = _procesar_xacro(xacro_robot, cfg, fake=simulacion)
     descripcion = _renombrar_urdf(procesado.toprettyxml(indent="  "), id_cuerpo)
 
     srdf = carpeta / "openarm.srdf"
