@@ -3,3 +3,5 @@
 *.ps1 text eol=crlf
 Dockerfile* text eol=lf
 supervisord.conf text eol=lf
+# Scripts de openarm_can sin extensión .sh (se instalan y ejecutan en el contenedor)
+ros_workspace/src/openarm_can/setup/openarm-can-* text eol=lf
