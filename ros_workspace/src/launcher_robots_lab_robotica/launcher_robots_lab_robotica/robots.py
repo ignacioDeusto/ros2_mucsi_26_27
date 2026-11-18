@@ -30,8 +30,9 @@ ROBOTS = {
 TOOL_TCP_PORT = "54321"
 
 # Cuerpos OpenArm: cada cuerpo lleva dos brazos (izquierdo y derecho) que comparten el
-# equipo. Son simulaciones (mock hardware); el robot real necesitaría openarm_hardware
-# más la librería openarm_can y un bus CAN por brazo.
+# equipo. En simulación se usa mock hardware; el robot real usa openarm_hardware (sobre
+# openarm_can) con un bus CAN por brazo. herramientas/levantar_can.sh lee de aquí las
+# interfaces de cada cuerpo (busca las líneas "*_can_interface": no cambies su formato).
 ROBOTS_OPENARM = {
     "301": {
         "arm_type": "openarm_v2.0",

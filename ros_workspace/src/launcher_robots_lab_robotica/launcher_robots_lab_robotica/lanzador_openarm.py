@@ -10,10 +10,10 @@ Todos los datos (xacros, mallas y configuración de MoveIt) están en la carpeta
 Igual que en `lanzador_doble.py`, el SRDF, la cinemática, los límites y los controladores
 se generan en un directorio temporal a partir de esa configuración.
 
-Para el robot real falta el plugin de hardware (`openarm_hardware`, de Enactic, que
-necesita la librería `openarm_can`): no está en el espacio de trabajo. El xacro ya soporta
-`use_fake_hardware:=false` con los buses CAN de `robots.py`, así que bastaría con añadir
-esos dos paquetes y crear los `robot_301.launch.py`/`robot_302.launch.py` oportunos.
+Para el robot real (`robot_301.launch.py`/`robot_302.launch.py`) el xacro se procesa con
+`use_fake_hardware:=false` y usa el plugin `openarm_hardware/OpenArmHW` de Enactic (copiado
+en `ros_workspace/src/openarm_ros2`, sobre la librería `openarm_can`) con los buses CAN de
+`robots.py`. Los buses tienen que estar levantados antes (`./launcher.sh can <id>`).
 """
 
 import copy
@@ -270,8 +270,8 @@ def generar_lanzamiento_openarm(id_cuerpo, simulacion):
     """Devuelve la LaunchDescription del cuerpo OpenArm `id_cuerpo` ("301", "302").
 
     Si `simulacion` es True se usa el hardware simulado (mock) de ros2_control y las pinzas
-    se mueven por el controlador; si no, se usaría openarm_hardware sobre los buses CAN
-    configurados en robots.py (paquete no compilado todavía: solo simulación).
+    se mueven por el controlador; si no, se usa openarm_hardware sobre los buses CAN
+    configurados en robots.py (que deben estar levantados: ./launcher.sh can <id>).
     """
     cfg = ROBOTS_OPENARM[id_cuerpo]
     ids = _ids_brazos(id_cuerpo)
