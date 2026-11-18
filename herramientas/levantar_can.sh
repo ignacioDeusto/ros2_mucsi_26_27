@@ -25,7 +25,7 @@ ID=""
 
 die() { echo "ERROR: $*" >&2; exit 1; }
 
-ayuda() { sed -n '2,13p' "${BASH_SOURCE[0]}" | sed 's/^# \{0,1\}//'; }
+ayuda() { sed -n '2,14p' "${BASH_SOURCE[0]}" | sed 's/^# \{0,1\}//'; }
 
 while [ $# -gt 0 ]; do
     case "$1" in
