@@ -115,6 +115,30 @@ void OpenArmHW::generate_joint_names() {
                 "Gripper joint NOT added because hand_=false");
   }
 
+  // [launcher_robots_lab_robotica] Local change: if the URDF declares the expected
+  // joints (same count, ending in jointN / finger_joint1, in that order), use its
+  // names so the interfaces match a renamed URDF (e.g. 301_izq_joint1 instead of
+  // openarm_izq_joint1). Otherwise keep the generated names (upstream behaviour).
+  const auto& urdf_joints = info_.joints;
+  bool use_urdf_names = urdf_joints.size() == joint_names_.size();
+  for (size_t i = 0; use_urdf_names && i < joint_names_.size(); ++i) {
+    const std::string suffix =
+        (i < ARM_DOF) ? "_joint" + std::to_string(i + 1) : "_finger_joint1";
+    const std::string& name = urdf_joints[i].name;
+    use_urdf_names = name.size() >= suffix.size() &&
+                     name.compare(name.size() - suffix.size(), suffix.size(),
+                                  suffix) == 0 &&
+                     (i >= ARM_DOF || name.find("finger") == std::string::npos);
+  }
+  if (use_urdf_names) {
+    for (size_t i = 0; i < joint_names_.size(); ++i) {
+      joint_names_[i] = urdf_joints[i].name;
+    }
+    RCLCPP_INFO(rclcpp::get_logger("OpenArmHW"),
+                "Using joint names from the URDF (first: %s)",
+                joint_names_.front().c_str());
+  }
+
   RCLCPP_INFO(rclcpp::get_logger("OpenArmHW"),
               "Generated %zu joint names for arm prefix '%s'",
               joint_names_.size(), arm_prefix_.c_str());
