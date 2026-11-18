@@ -115,6 +115,68 @@ Cada cuerpo OpenArm es un robot con **dos brazos de 7 articulaciones** (izquierd
 
 Los buses se configuran en `robots.py` (`ROBOTS_OPENARM`). Antes de lanzar el robot real hay que levantarlos en el anfitrión con `./launcher.sh can <id>` (CAN-FD, 1 Mbit/s y 5 Mbit/s de datos por defecto). **Al activarse, el plugin lleva los brazos a la posición cero**: deja espacio libre alrededor. Los pasos completos están en `ros_workspace/src/launcher_robots_lab_robotica/openarm/README.md`, sección "Robot real".
 
+#### Lanzar el OpenArm real: comandos exactos
+
+Se necesita un **PC Linux nativo** (no WSL, Windows ni macOS) con los adaptadores USB-CAN de los dos brazos conectados y los brazos alimentados. Los ejemplos usan el cuerpo 301; para el 302 cambia `301` por `302` (buses `can2`/`can3`).
+
+**1. Obtener el código** (solo la primera vez; en un PC que ya lo tenga, `git pull`):
+
+```bash
+git clone -b dev https://github.com/ignacioDeusto/ros2_mucsi_26_27.git
+cd ros2_mucsi_26_27
+```
+
+**2. Arrancar el entorno del laboratorio y compilar** (terminal 1, en el anfitrión). `local` reconstruye la imagen si cambió el Dockerfile; con GPU NVIDIA usa `local_gpu`:
+
+```bash
+./launcher.sh local
+./launcher.sh compilar
+```
+
+**3. Comprobar los adaptadores** (anfitrión). Deben aparecer `can0` (brazo izquierdo) y `can1` (brazo derecho); si salen en otro orden, desconéctalos y conéctalos en orden:
+
+```bash
+ip -brief link show type can
+```
+
+**4. Levantar los buses CAN** (anfitrión, pide la contraseña de `sudo`):
+
+```bash
+./launcher.sh can 301
+```
+
+Se puede ver antes qué va a hacer con `./launcher.sh can 301 --dry-run`, y cambiar las velocidades con `--bitrate 1000000 --dbitrate 5000000`.
+
+**5. Comprobar que responden los motores sin moverlos** (terminal 2, dentro del contenedor). Deben responder los motores de cada brazo:
+
+```bash
+./launcher.sh terminal
+openarm-can-cli -i can0 discover
+openarm-can-cli -i can1 discover
+exit
+```
+
+**6. Lanzar el robot** (terminal 1). ⚠️ **Al arrancar, los dos brazos van a la posición cero:** deja espacio libre alrededor y ten a mano el corte de alimentación.
+
+```bash
+./launcher.sh robot 301
+```
+
+En la salida deben aparecer `Loaded hardware 'robot_301_izq_hardware_interface' from plugin 'openarm_hardware/OpenArmHW'` (y lo mismo para `der`), `Using joint names from the URDF` y `Configured and activated` para los cinco controladores. Se abre RViz.
+
+**7. Primer movimiento** (terminal 2, con el robot lanzado). Copia los ejemplos al espacio de trabajo, ya que `ejemplos/` no está montado en el contenedor:
+
+```bash
+cp ejemplos/control_robot.py ejemplos/prueba_openarm.py ros_workspace/
+./launcher.sh terminal
+cd ~/ros_workspace
+python3 prueba_openarm.py 301_izq 0.05
+```
+
+El script gira `joint1` del brazo izquierdo 0,05 rad, lo devuelve a su sitio y abre y cierra la pinza a 30 mm. Para el brazo derecho: `python3 prueba_openarm.py 301_der 0.05`. Conviene probar antes lo mismo en simulación (`./launcher.sh sim 301`).
+
+**8. Parar** con `Ctrl+C` en el terminal 1. Los motores se deshabilitan, así que **sujeta los brazos** si pueden caer. Para apagar el entorno: `./launcher.sh parar`.
+
 ## 4. Método A: scripts `launcher` (recomendado la primera vez)
 
 El repositorio incluye un script que hace todo lo necesario. Solo se necesita Git y Docker.
