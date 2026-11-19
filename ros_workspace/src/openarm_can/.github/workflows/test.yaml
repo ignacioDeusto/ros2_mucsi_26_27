@@ -1,0 +1,160 @@
+# Copyright 2025 Enactic, Inc.
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#     http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+
+name: Test
+on:
+  push:
+    branches:
+      - '**'
+      - '!dependabot/**'
+    tags:
+      - '**'
+  pull_request:
+concurrency:
+  group: ${{ github.head_ref || github.sha }}-${{ github.workflow }}
+  cancel-in-progress: true
+jobs:
+  lint:
+    name: Lint
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          submodules: recursive
+      - name: Install pre-commit
+        run: |
+          python -m pip install pre-commit
+      - uses: actions/cache@v6
+        with:
+          path: ~/.cache/pre-commit
+          key: pre-commit-${{ hashFiles('.pre-commit-config.yaml') }}
+      - name: Run pre-commit
+        run: |
+          pre-commit run --show-diff-on-failure --color=always --all-files
+
+  build:
+    name: Build
+    runs-on: ${{ matrix.runs-on }}
+    timeout-minutes: 5
+    strategy:
+      fail-fast: false
+      matrix:
+        runs-on:
+          - ubuntu-22.04
+          - ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          submodules: recursive
+      - name: "C++: Install dependencies"
+        run: |
+          sudo apt update
+          sudo apt install -y -V \
+            cmake \
+            libcli11-dev \
+            ninja-build \
+            python3-pytest
+      - name: "C++: CMake"
+        run: |
+          cmake \
+            -B ../build \
+            -S . \
+            -GNinja \
+            -DCMAKE_INSTALL_PREFIX=$PWD/install \
+            -DCMAKE_BUILD_TYPE=Debug
+      - name: "C++: Build"
+        run: |
+          ninja -C ../build
+      - name: "C++: Prepare virtual CAN interface"
+        run: |
+          # vcan.ko is in linux-modules-extra-* on some kernels such as
+          # 6.8 but in linux-modules-* on others such as 7.0.
+          if ! sudo modprobe vcan; then
+            sudo apt install -y -V linux-modules-extra-$(uname -r)
+            sudo modprobe vcan
+          fi
+          sudo ip link add dev vcan0 type vcan
+          sudo ip link set dev vcan0 up
+      - name: "C++: Test"
+        env:
+          OPENARM_CAN_TEST_INTERFACE: vcan0
+        run: |
+          ctest --test-dir ../build --output-on-failure
+      - name: Install
+        run: |
+          ninja -C ../build install
+      - uses: actions/setup-python@v7
+        with:
+          python-version: 3
+      - name: "Python: Install dependencies"
+        run: |
+          python3 -m pip install -r python/requirements.txt
+          if apt show nanobind-dev; then
+            sudo apt install -y -V nanobind-dev
+          fi
+      - name: "Python: Build"
+        run: |
+          python3 -m pip install \
+            -Ccmake.define.CMAKE_DISABLE_FIND_PACKAGE_OpenArmCAN=OFF \
+            -Ccmake.define.CMAKE_PREFIX_PATH=$PWD/install \
+            --verbose \
+            ./python
+      - name: "Python: Test"
+        env:
+          # libopenarm_can.so is installed into a non-standard location.
+          LD_LIBRARY_PATH: ${{ github.workspace }}/install/lib
+        run: |
+          python3 -c "import openarm_can"
+
+  ros:
+    name: ROS ${{ matrix.distro }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    container: ros:${{ matrix.distro }}-ros-base
+    strategy:
+      fail-fast: false
+      matrix:
+        distro:
+          - humble
+          - jazzy
+          - rolling
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          path: src/openarm_can
+          submodules: recursive
+      - name: Install dependencies
+        run: |
+          apt update
+          rosdep update --rosdistro ${{ matrix.distro }}
+          rosdep install \
+            --default-yes \
+            --from-paths src \
+            --ignore-src \
+            --rosdistro ${{ matrix.distro }}
+      - name: Build Debian package
+        working-directory: src/openarm_can
+        run: |
+          apt install -y -V \
+            debhelper \
+            dpkg-dev \
+            fakeroot \
+            python3-bloom
+          bloom-generate rosdebian --ros-distro ${{ matrix.distro }}
+          fakeroot debian/rules binary
+      - uses: actions/upload-artifact@v7
+        with:
+          name: ros-${{ matrix.distro }}-debian-packages
+          path: src/*.deb

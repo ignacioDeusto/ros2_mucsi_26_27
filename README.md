@@ -73,6 +73,7 @@ El archivo `docker-compose.yml` define tres servicios. Los nombres de los servic
 - En un PC con WSL o Linux, sin NVIDIA: `local`. Con NVIDIA y `nvidia-container-toolkit`: `local_gpu`.
 - En un PC del laboratorio sin NVIDIA: `local`. Con NVIDIA y `nvidia-container-toolkit`: `local_gpu`.
 - Para conectarte al robot real desde Windows o macOS no se publican los puertos del driver (50030-50062); hazlo desde un PC del laboratorio o Linux.
+- El OpenArm real necesita SocketCAN (buses CAN del kernel): solo funciona en un **Linux nativo** con `local`/`local_gpu`. WSL, Windows y macOS no sirven; ahí usa la simulación.
 
 Los perfiles `local` y `local_gpu` requieren:
 
@@ -105,12 +106,80 @@ Una pareja usa un único `move_group` y un único RViz. Los robots reales de una
 
 ### OpenArm (301 y 302)
 
-Cada cuerpo OpenArm es un robot con **dos brazos de 7 articulaciones** (izquierdo y derecho) y una pinza cada uno. Solo existe la **simulación** (mock hardware): `sim_301.launch.py` y `sim_302.launch.py`.
+Cada cuerpo OpenArm es un robot con **dos brazos de 7 articulaciones** (izquierdo y derecho) y una pinza cada uno. La simulación usa mock hardware; el robot real usa el plugin `openarm_hardware` de Enactic (sobre la librería `openarm_can`) con un bus CAN-FD por brazo.
 
-| Cuerpo | Simulación | Interfaz |
-|---|---|---|
-| 301 (izq = `openarm_left_`, der = `openarm_right_`) | `sim_301.launch.py` | `./launcher.sh sim 301` o `ros2 launch launcher_robots_lab_robotica sim_301.launch.py` |
-| 302 | `sim_302.launch.py` | `./launcher.sh sim 302` o `ros2 launch launcher_robots_lab_robotica sim_302.launch.py` |
+| Cuerpo | Brazos (`ControlRobot`) | Simulación | Robot real (en el anfitrión, en este orden) | Buses CAN (izq / der) |
+|---|---|---|---|---|
+| 301 | `301_izq`, `301_der` | `sim_301.launch.py` (`./launcher.sh sim 301`) | `robot_301.launch.py`: `./launcher.sh can 301` y después `./launcher.sh robot 301` (**probado con el robot físico**) | `can1` / `can0` |
+| 302 | `302_izq`, `302_der` | `sim_302.launch.py` (`./launcher.sh sim 302`) | `robot_302.launch.py`: `./launcher.sh can 302` y después `./launcher.sh robot 302` (**sin probar**) | `can2` / `can3` |
+
+> **Buses CAN:** en el 301 el brazo **izquierdo va en `can1`** y el **derecho en `can0`** (canales 2 y 1 del adaptador PCAN-USB Pro FD). Se ha comprobado con el robot: con la asignación anterior (izquierdo en `can0`) los brazos estaban intercambiados y todo se movía en espejo. Los buses del 302 (`can2`/`can3`) no se han comprobado.
+>
+> **El CAN solo funciona en un Linux nativo** (con `local`/`local_gpu`): WSL, Windows y macOS no tienen SocketCAN, así que ahí solo se puede usar la simulación.
+
+Los buses se configuran en `robots.py` (`ROBOTS_OPENARM`). Antes de lanzar el robot real hay que levantarlos en el anfitrión con `./launcher.sh can <id>` (CAN-FD, 1 Mbit/s y 5 Mbit/s de datos por defecto). **Al activarse, el plugin lleva los brazos a la posición cero**: deja espacio libre alrededor. Los pasos completos están en `ros_workspace/src/launcher_robots_lab_robotica/openarm/README.md`, sección "Robot real".
+
+#### Lanzar el OpenArm real: comandos exactos
+
+Se necesita un **PC Linux nativo** (no WSL, Windows ni macOS) con los adaptadores USB-CAN de los dos brazos conectados y los brazos alimentados. Los ejemplos usan el cuerpo 301; para el 302 cambia `301` por `302` (buses `can2`/`can3`).
+
+**1. Obtener el código** (solo la primera vez; en un PC que ya lo tenga, `git pull`):
+
+```bash
+git clone -b dev https://github.com/ignacioDeusto/ros2_mucsi_26_27.git
+cd ros2_mucsi_26_27
+```
+
+**2. Arrancar el entorno del laboratorio y compilar** (terminal 1, en el anfitrión). `local` reconstruye la imagen si cambió el Dockerfile; con GPU NVIDIA usa `local_gpu`:
+
+```bash
+./launcher.sh local
+./launcher.sh compilar
+```
+
+**3. Comprobar los adaptadores** (anfitrión). Deben aparecer `can1` (brazo izquierdo) y `can0` (brazo derecho); si salen en otro orden, desconéctalos y conéctalos en orden:
+
+```bash
+ip -brief link show type can
+```
+
+**4. Levantar los buses CAN** (anfitrión, pide la contraseña de `sudo`):
+
+```bash
+./launcher.sh can 301
+```
+
+Se puede ver antes qué va a hacer con `./launcher.sh can 301 --dry-run`, y cambiar las velocidades con `--bitrate 1000000 --dbitrate 5000000`.
+
+**5. Comprobar que responden los motores sin moverlos** (terminal 2, dentro del contenedor). Deben responder los motores de cada brazo:
+
+```bash
+./launcher.sh terminal
+openarm-can-cli -i can0 discover
+openarm-can-cli -i can1 discover
+exit
+```
+
+**6. Lanzar el robot** (terminal 1). ⚠️ **Al arrancar, los dos brazos van a la posición cero:** deja espacio libre alrededor y ten a mano el corte de alimentación.
+
+```bash
+./launcher.sh robot 301
+```
+
+En la salida deben aparecer `Loaded hardware 'robot_301_izq_hardware_interface' from plugin 'openarm_hardware/OpenArmHW'` (y lo mismo para `der`), `Using joint names from the URDF` y `Configured and activated` para los cinco controladores. Se abre RViz.
+
+**7. Primer movimiento** (terminal 2, con el robot lanzado). Copia los ejemplos al espacio de trabajo, ya que `ejemplos/` no está montado en el contenedor:
+
+```bash
+cp ejemplos/control_robot.py ejemplos/prueba_openarm.py ros_workspace/
+./launcher.sh terminal
+cd ~/ros_workspace
+python3 prueba_openarm.py 301_izq 0.05
+```
+
+El script gira `joint1` del brazo izquierdo 0,05 rad, lo devuelve a su sitio y abre y cierra la pinza a 30 mm. Para el brazo derecho: `python3 prueba_openarm.py 301_der 0.05`. Conviene probar antes lo mismo en simulación (`./launcher.sh sim 301`).
+
+**8. Parar** con `Ctrl+C` en el terminal 1. Los motores se deshabilitan, así que **sujeta los brazos** si pueden caer. Para apagar el entorno: `./launcher.sh parar`.
 
 ## 4. Método A: scripts `launcher` (recomendado la primera vez)
 
@@ -147,13 +216,14 @@ En los PCs del laboratorio o personales con (Linux o WSL con X11) se puede usar 
 | `local` | Arranca el entorno del laboratorio en la pantalla (solo Linux con X11) |
 | `local_gpu` | Igual que `local`, con GPU NVIDIA |
 | `sim <id>` | Lanza la simulación: UR `203`-`206`, parejas `203-204`/`205-206`, u OpenArm `301`/`302` |
-| `robot <id>` | Lanza el robot real UR (o la pareja, sin probar); los OpenArm aún no tienen robot real |
+| `robot <id>` | Lanza el robot real: UR `203`-`206`, parejas UR (sin probar) u OpenArm `301` (probado con el robot físico) y `302` (sin probar). En el OpenArm, antes hay que ejecutar `can <id>` |
+| `can <id> [--bitrate N] [--dbitrate N] [--no-fd]` | Levanta en el anfitrión los buses CAN del OpenArm `301`/`302` (solo Linux nativo; no WSL). Por defecto CAN-FD 1000000/5000000. Equivale a `herramientas/levantar_can.sh <id>` |
 | `terminal` | Abre una terminal dentro del contenedor |
 | `compilar` | Recompila el espacio de trabajo (`colcon build --symlink-install`) |
 | `parar` | Para el contenedor (conserva su contenido) |
 | `ayuda` | Muestra la ayuda |
 
-`sim` y `robot` ejecutan dentro del contenedor `ros2 launch launcher_robots_lab_robotica {sim|robot}_<id>.launch.py`. Tras modificar paquetes, ejecuta `compilar`.
+`sim` y `robot` ejecutan dentro del contenedor `ros2 launch launcher_robots_lab_robotica {sim|robot}_<id>.launch.py`. `can` se ejecuta en el anfitrión (no en el contenedor), porque los buses CAN son del kernel del anfitrión, y usa `sudo`. Tras modificar paquetes, ejecuta `compilar`.
 
 ## 5. Método B: manual
 
@@ -261,6 +331,9 @@ ros2 launch launcher_robots_lab_robotica robot_206.launch.py      # robot real (
 ```bash
 ros2 launch launcher_robots_lab_robotica sim_301.launch.py        # OpenArm 301 (./launcher.sh sim 301)
 ```
+```bash
+ros2 launch launcher_robots_lab_robotica robot_301.launch.py      # OpenArm 301 real (antes: ./launcher.sh can 301 en el anfitrión)
+```
 
 ## 6. Problemas frecuentes
 
@@ -312,7 +385,18 @@ ros2 launch launcher_robots_lab_robotica sim_301.launch.py        # OpenArm 301 
 | No conecta con el robot | Comprueba que estás en la red del laboratorio (10.172.21.x) y que en el robot corre el programa *External Control*. |
 | Desde Windows/macOS no funciona el robot real | No están publicados los puertos del driver (50030-50062); usa un PC del laboratorio con `local` o `local_gpu`. |
 | Las parejas reales (`robot_203_204`, `robot_205_206`) no se comportan como se espera | Están sin probar y no incluyen el control del dashboard: libera los frenos y arranca *External Control* desde la consola de cada robot. |
-| `./launcher.sh sim 301` falla | El launcher solo admite 203-206 y las parejas; usa `ros2 launch launcher_robots_lab_robotica sim_301.launch.py`. |
+
+### OpenArm real (301, 302)
+
+| Síntoma | Solución |
+|---|---|
+| `./launcher.sh can 301` dice "Estás en WSL y su kernel no incluye SocketCAN" | El kernel de WSL (y el de Docker Desktop) no trae CAN, así que desde WSL, Windows o macOS no se puede mover el OpenArm real. Usa un PC Linux nativo del laboratorio con `local`/`local_gpu`; aquí trabaja con `./launcher.sh sim 301`. |
+| "El kernel de este equipo no tiene soporte de CAN" | El Linux no tiene los módulos `can`/`can_raw`. Usa un kernel de distribución estándar (Ubuntu los incluye). |
+| "No existe la interfaz can0" | El adaptador USB-CAN de ese brazo no está conectado o no tiene driver (`gs_usb`). Comprueba con `ip -brief link show type can`. Los nombres `can0`, `can1`... dependen del orden de conexión: si no coinciden con `robots.py`, conéctalos en orden o cambia `robots.py`. |
+| Al lanzar `robot_301`: `Failed to initialize socket for interface: can0` | Los buses no están levantados (`./launcher.sh can 301`) o el contenedor no ve la red del anfitrión (usa `local`/`local_gpu`, no `desktop`). |
+| Al lanzar `robot_301`: `Could not find ... openarm_hardware/OpenArmHW` | El paquete `openarm_hardware` no está compilado. Reconstruye la imagen (`./launcher.sh local` lo hace solo si cambió el Dockerfile) para tener `libcli11-dev` y ejecuta `./launcher.sh compilar`. |
+| Los brazos se mueven al lanzar `robot_301` | Es lo esperado: al activarse, `openarm_hardware` lleva todas las articulaciones a la posición cero. |
+| `candump can0` no muestra tráfico | Comprueba la alimentación de los motores, el cableado y que todos los nodos usen el mismo bitrate (`./launcher.sh can 301 --bitrate ... --dbitrate ...`). |
 
 ## 7. Notas de desarrollo
 
@@ -336,8 +420,10 @@ ros2 launch launcher_robots_lab_robotica sim_301.launch.py        # OpenArm 301 
 - `dockerfiles/`: imagen basada en ROS 2 Jazzy + escritorio XFCE con noVNC (puerto 6081, contraseña `laboratorio`), multiarquitectura (x86_64/arm64). `docker-compose.yml` define los perfiles y los límites de recursos (`LAB_MEM`, `LAB_CPUS`).
 - `ros_workspace/src/launcher_robots_lab_robotica`: xacros (UR3e + RG2, con `ros2_control`), calibraciones por robot, configuración de MoveIt 2 y los lanzadores. `lanzador.py` genera el lanzamiento de un robot; `lanzador_doble.py` el de una pareja (SRDF, controladores y MoveIt combinados en una carpeta temporal); `lanzador_openarm.py` el de un cuerpo OpenArm (renombra los prefijos `openarm_left_`/`openarm_right_` del URDF y SRDF bimanuales, y genera SRDF, cinemática, límites y controladores). El nodo `pinza_openarm` sirve la acción de la pinza OpenArm en milímetros y publica la articulación mimética `finger_joint2`. Los archivos de `launch/` son envoltorios finos.
 - `ros_workspace/src/rg2_driver`: servidor de acción `GripperCommand` de la pinza RG2 (con `prefix` y `namespace` para las escenas dobles).
-- `ros_workspace/src/launcher_robots_lab_robotica/openarm/`: datos del OpenArm importados del repositorio original de Enactic (xacros y mallas del v2.0, pinza, envoltorio ZED, plantillas de MoveIt; ver `openarm/README.md`), con las rutas reescritas al paquete. Para el robot real hacen falta además el plugin `openarm_hardware` y la librería `openarm_can` (no están en el espacio de trabajo).
-- `launcher.sh` / `launcher.ps1` / `launcher.bat`: scripts multiplataforma (instalar Docker, `desktop`, `local`, `local_gpu`, `sim`, `robot`, `terminal`, `compilar`, `parar`).
+- `ros_workspace/src/launcher_robots_lab_robotica/openarm/`: datos del OpenArm importados del repositorio original de Enactic (xacros y mallas del v2.0, pinza, envoltorio ZED, plantillas de MoveIt; ver `openarm/README.md`), con las rutas reescritas al paquete.
+- `ros_workspace/src/openarm_can` y `ros_workspace/src/openarm_ros2`: copias de los repositorios de Enactic para el OpenArm real (la librería CAN y el plugin `openarm_hardware`; el resto de paquetes de `openarm_ros2` llevan `COLCON_IGNORE`). El commit exacto y los cambios locales están en el `ORIGEN.md` de cada uno.
+- `herramientas/levantar_can.sh`: levanta los buses CAN de un cuerpo OpenArm (lo usa `./launcher.sh can <id>`).
+- `launcher.sh` / `launcher.ps1` / `launcher.bat`: scripts multiplataforma (instalar Docker, `desktop`, `local`, `local_gpu`, `sim`, `robot`, `can`, `terminal`, `compilar`, `parar`).
 
 <!-- ## 10. Estado de verificación
 

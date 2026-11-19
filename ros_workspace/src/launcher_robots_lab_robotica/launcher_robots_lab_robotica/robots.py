@@ -30,13 +30,18 @@ ROBOTS = {
 TOOL_TCP_PORT = "54321"
 
 # Cuerpos OpenArm: cada cuerpo lleva dos brazos (izquierdo y derecho) que comparten el
-# equipo. Son simulaciones (mock hardware); el robot real necesitaría openarm_hardware
-# más la librería openarm_can y un bus CAN por brazo.
+# equipo. En simulación se usa mock hardware; el robot real usa openarm_hardware (sobre
+# openarm_can) con un bus CAN por brazo. herramientas/levantar_can.sh lee de aquí las
+# interfaces de cada cuerpo (busca las líneas "*_can_interface": no cambies su formato).
 ROBOTS_OPENARM = {
     "301": {
         "arm_type": "openarm_v2.0",
-        "left_can_interface": "can0",
-        "right_can_interface": "can1",
+        # Comprobado con el robot (2026-11-18): el brazo izquierdo está en can1 y el derecho
+        # en can0 (canal 2 y canal 1 del PCAN-USB Pro FD), como en los valores por defecto
+        # del xacro de Enactic. Con los buses cruzados el brazo "izquierdo" movía el derecho
+        # y todo parecía en espejo (el URDF construye el izquierdo como espejo del derecho)
+        "left_can_interface": "can1",
+        "right_can_interface": "can0",
         "can_fd": "true",
     },
     "302": {

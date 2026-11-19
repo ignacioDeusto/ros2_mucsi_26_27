@@ -36,6 +36,11 @@ RUN apt-get update && apt-get install -y --no-install-recommends cmake libboost-
     (pip install --break-system-packages ur_rtde || echo "AVISO: no se pudo instalar ur_rtde; la pinza real no estará disponible") && \
     rm -rf /var/lib/apt/lists/*
 
+# OpenArm real (301, 302): libcli11-dev para compilar las herramientas de openarm_can,
+# can-utils (candump, cansend) e iproute2 (ip link) para levantar y depurar los buses CAN.
+RUN apt-get update && apt-get install -y --no-install-recommends libcli11-dev can-utils iproute2 && \
+    rm -rf /var/lib/apt/lists/*
+
 # OpenCode 2 (agente de IA para terminal), siempre la última versión. Se instala
 # como root en /usr/local/bin para que esté disponible para cualquier usuario/shell.
 RUN curl -fsSL https://opencode.ai/v2/install -o /tmp/opencode-install.sh && \

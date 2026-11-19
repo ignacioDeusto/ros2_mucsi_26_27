@@ -69,10 +69,9 @@ function Iniciar($servicio) {
 }
 
 function Lanzar($tipo) {
-    if ($tipo -eq "sim") {
-        if ($Opcion -notmatch '^(20[3-6]|301|302|203-204|205-206)$') { Fallo "Indica el robot: 203, 204, 205, 206, 301, 302 o una pareja UR (203-204, 205-206)" }
-    } else {
-        if ($Opcion -notmatch '^(20[3-6]|203-204|205-206)$') { Fallo "Indica el robot UR: 203, 204, 205, 206 o una pareja (203-204, 205-206). Los OpenArm (301, 302) todavía no están conectados al hardware real" }
+    if ($Opcion -notmatch '^(20[3-6]|301|302|203-204|205-206)$') { Fallo "Indica el robot: UR 203, 204, 205, 206, OpenArm 301, 302 o una pareja UR (203-204, 205-206)" }
+    if ($tipo -eq "robot" -and $Opcion -match '^30[12]$') {
+        Write-Host "OpenArm $Opcion real: necesita los buses CAN, que solo existen en un PC Linux nativo (./launcher.sh can $Opcion). Desde Windows no funcionará." -ForegroundColor Yellow
     }
     $id = $Opcion -replace '-', '_'
     Comprobar-Docker
@@ -88,8 +87,9 @@ Uso: .\launcher.bat <comando>
   desktop                Construye (la primera vez) y arranca el entorno y abre el escritorio en el navegador
   sim <203-206|301|302|203-204|205-206>
                          Lanza la simulación de un UR, de una pareja de UR o de un cuerpo OpenArm (Ctrl+C para detenerla)
-  robot <203-206|203-204|205-206>
-                         Lanza el robot real UR (o la pareja, sin probar); los OpenArm aún no tienen robot real
+  robot <203-206|301|302|203-204|205-206>
+                         Lanza el robot real: UR, pareja UR (sin probar) u OpenArm (este solo desde Linux nativo)
+  can <301|302>          Levanta los buses CAN del OpenArm: solo en Linux nativo con ./launcher.sh can <id>
   terminal               Abre una terminal dentro del contenedor
   compilar               Recompila el espacio de trabajo (colcon build)
   parar                  Para el contenedor (conserva su contenido)
@@ -103,6 +103,7 @@ switch ($Comando) {
     { $_ -in "desktop", "local", "local_gpu" } { Iniciar $_ }
     "sim" { Lanzar "sim" }
     "robot" { Lanzar "robot" }
+    "can" { Fallo "Windows no tiene SocketCAN (tampoco WSL): los buses CAN del OpenArm se levantan en un PC Linux nativo con ./launcher.sh can <301|302>. Aquí puedes usar la simulación: .\launcher.bat sim 301" }
     "terminal" { Comprobar-Docker; $s = Servicio-Activo; docker @Compose exec -u laboratorio $s bash }
     "compilar" { Compilar }
     "parar" { Comprobar-Docker; docker @Compose stop }

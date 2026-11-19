@@ -11,6 +11,7 @@ COLCON_IGNORE
 *.log
 *.swp
 .vscode/
+.devcontainer/
 
 # Coding agents
 .opencode/
@@ -36,3 +37,9 @@ AGENTS.md
 .agents/
 .kiro/
 .junie/
+
+# Los paquetes de openarm_ros2 que no se compilan (solo se usa openarm_hardware)
+!ros_workspace/src/openarm_ros2/*/COLCON_IGNORE
+
+# Registros de los scripts del OpenArm (levantar_brazo.py, alternar_brazos.py, camara_brazo.py)
+ros_workspace/registros_openarm/

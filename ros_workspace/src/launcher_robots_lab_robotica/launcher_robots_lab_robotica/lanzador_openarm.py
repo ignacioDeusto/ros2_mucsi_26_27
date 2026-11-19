@@ -10,10 +10,10 @@ Todos los datos (xacros, mallas y configuración de MoveIt) están en la carpeta
 Igual que en `lanzador_doble.py`, el SRDF, la cinemática, los límites y los controladores
 se generan en un directorio temporal a partir de esa configuración.
 
-Para el robot real falta el plugin de hardware (`openarm_hardware`, de Enactic, que
-necesita la librería `openarm_can`): no está en el espacio de trabajo. El xacro ya soporta
-`use_fake_hardware:=false` con los buses CAN de `robots.py`, así que bastaría con añadir
-esos dos paquetes y crear los `robot_301.launch.py`/`robot_302.launch.py` oportunos.
+Para el robot real (`robot_301.launch.py`/`robot_302.launch.py`) el xacro se procesa con
+`use_fake_hardware:=false` y usa el plugin `openarm_hardware/OpenArmHW` de Enactic (copiado
+en `ros_workspace/src/openarm_ros2`, sobre la librería `openarm_can`) con los buses CAN de
+`robots.py`. Los buses tienen que estar levantados antes (`./launcher.sh can <id>`).
 """
 
 import copy
@@ -212,8 +212,14 @@ def _config_controladores(ids):
         trayectoria = f"robot_{id_brazo}_joint_trajectory_controller"
         gestor[trayectoria] = {"type": "joint_trajectory_controller/JointTrajectoryController"}
         articulaciones = [f"{id_brazo}_{j}" for j in ARTICULACIONES_BRAZO]
-        restricciones = {"stopped_velocity_tolerance": 0.2, "goal_time": 0.0}
-        restricciones.update({j: {"trajectory": 0.2, "goal": 0.1} for j in articulaciones})
+        # goal_time: margen tras el final de la trayectoria para entrar en la tolerancia
+        # del objetivo. Con 0 el controlador espera indefinidamente si un brazo no llega
+        # (p. ej. un motor sin par) y bloquea todos los movimientos siguientes
+        restricciones = {"stopped_velocity_tolerance": 0.2, "goal_time": 1.0}
+        # goal 0.2: openarm_hardware controla con un PD (MIT) sin compensar la gravedad, así
+        # que en el robot real el codo queda ~0.1 rad por debajo de la consigna con el
+        # brazo levantado; con 0.1 la llegada falla aunque el brazo esté donde debe
+        restricciones.update({j: {"trajectory": 0.2, "goal": 0.2} for j in articulaciones})
         parametros[trayectoria] = {
             "ros__parameters": {
                 "joints": articulaciones,
@@ -257,7 +263,9 @@ def _config_moveit(ids):
             "allowed_execution_duration_scaling": 1.2,
             "allowed_goal_duration_margin": 0.5,
             "allowed_start_tolerance": 0.01,
-            "execution_duration_monitoring": False,
+            # Aborta una ejecución que dura más de lo previsto (con el escalado y margen
+            # de arriba) en lugar de esperar para siempre
+            "execution_duration_monitoring": True,
         },
         "moveit_simple_controller_manager": {
             "controller_names": list(controladores),
@@ -266,12 +274,26 @@ def _config_moveit(ids):
     }
 
 
+def _procesar_xacro(xacro_robot, cfg, fake):
+    return xacro.process_file(
+        str(xacro_robot),
+        mappings={
+            "robot_preset": "default_bimanual",
+            "emit_grasp_frame": "true",
+            "use_fake_hardware": "true" if fake else "false",
+            "left_can_interface": cfg["left_can_interface"],
+            "right_can_interface": cfg["right_can_interface"],
+            "can_fd": cfg["can_fd"],
+        },
+    )
+
+
 def generar_lanzamiento_openarm(id_cuerpo, simulacion):
     """Devuelve la LaunchDescription del cuerpo OpenArm `id_cuerpo` ("301", "302").
 
     Si `simulacion` es True se usa el hardware simulado (mock) de ros2_control y las pinzas
-    se mueven por el controlador; si no, se usaría openarm_hardware sobre los buses CAN
-    configurados en robots.py (paquete no compilado todavía: solo simulación).
+    se mueven por el controlador; si no, se usa openarm_hardware sobre los buses CAN
+    configurados en robots.py (que deben estar levantados: ./launcher.sh can <id>).
     """
     cfg = ROBOTS_OPENARM[id_cuerpo]
     ids = _ids_brazos(id_cuerpo)
@@ -280,17 +302,8 @@ def generar_lanzamiento_openarm(id_cuerpo, simulacion):
     openarm_moveit = datos_openarm / "moveit"
     carpeta = Path(tempfile.mkdtemp(prefix=f"openarm_{id_cuerpo}_"))
 
-    procesado = xacro.process_file(
-        str(datos_openarm / "assets" / "robot" / "openarm_v2.0" / "urdf" / "openarm_v20.urdf.xacro"),
-        mappings={
-            "robot_preset": "default_bimanual",
-            "emit_grasp_frame": "true",
-            "use_fake_hardware": "true" if simulacion else "false",
-            "left_can_interface": cfg["left_can_interface"],
-            "right_can_interface": cfg["right_can_interface"],
-            "can_fd": cfg["can_fd"],
-        },
-    )
+    xacro_robot = datos_openarm / "assets" / "robot" / "openarm_v2.0" / "urdf" / "openarm_v20.urdf.xacro"
+    procesado = _procesar_xacro(xacro_robot, cfg, fake=simulacion)
     descripcion = _renombrar_urdf(procesado.toprettyxml(indent="  "), id_cuerpo)
 
     srdf = carpeta / "openarm.srdf"

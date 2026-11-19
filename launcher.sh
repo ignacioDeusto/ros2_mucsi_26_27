@@ -109,15 +109,20 @@ cmd_terminal() {
 
 cmd_lanzar() {
     local tipo="$1" id="${2:-}"
-    if [ "$tipo" = sim ]; then
-        [[ "$id" =~ ^(20[3-6]|301|302|203-204|205-206)$ ]] || die "Indica el robot: 203, 204, 205, 206, 301, 302 o una pareja UR (203-204, 205-206)"
-    else
-        [[ "$id" =~ ^(20[3-6]|203-204|205-206)$ ]] || die "Indica el robot UR: 203, 204, 205, 206 o una pareja (203-204, 205-206). Los OpenArm (301, 302) todavía no están conectados al hardware real"
+    [[ "$id" =~ ^(20[3-6]|301|302|203-204|205-206)$ ]] || die "Indica el robot: UR 203, 204, 205, 206, OpenArm 301, 302 o una pareja UR (203-204, 205-206)"
+    if [ "$tipo" = robot ] && [[ "$id" =~ ^30[12]$ ]]; then
+        echo "OpenArm $id real: los buses CAN deben estar levantados en el anfitrión (./launcher.sh can $id)."
     fi
     id="${id/-/_}"
     comprobar_docker
     servicio_activo; local s=$SERVICIO
     "${COMPOSE[@]}" exec -it -u laboratorio "$s" bash -c "$(ros_cmd "ros2 launch launcher_robots_lab_robotica ${tipo}_${id}.launch.py")"
+}
+
+cmd_can() {
+    # Se ejecuta en el anfitrión (no en el contenedor): los buses CAN son del kernel del anfitrión
+    [[ "${1:-}" =~ ^30[12]$ ]] || die "Indica el cuerpo OpenArm: 301 o 302 (p. ej. ./launcher.sh can 301 [--bitrate 1000000] [--dbitrate 5000000] [--no-fd])"
+    bash herramientas/levantar_can.sh "$@"
 }
 
 cmd_ayuda() {
@@ -130,8 +135,11 @@ Uso: ./launcher.sh <comando>
   local_gpu              Arranca el entorno del laboratorio con GPU NVIDIA (solo Linux con X11)
   sim <203-206|301|302|203-204|205-206>
                          Lanza la simulación de un UR, de una pareja de UR o de un cuerpo OpenArm (Ctrl+C para detenerla)
-  robot <203-206|203-204|205-206>
-                         Lanza el robot real UR (o la pareja, sin probar); los OpenArm aún no tienen robot real
+  robot <203-206|301|302|203-204|205-206>
+                         Lanza el robot real: UR, pareja UR (sin probar) u OpenArm (antes: can <id>)
+  can <301|302> [--bitrate N] [--dbitrate N] [--no-fd]
+                         Levanta los buses CAN del OpenArm en el anfitrión (solo Linux nativo, no WSL)
+                         Por defecto CAN-FD con 1000000/5000000
   terminal               Abre una terminal dentro del contenedor
   compilar               Recompila el espacio de trabajo (colcon build)
   parar                  Para el contenedor (conserva su contenido)
@@ -143,6 +151,7 @@ case "${1:-ayuda}" in
     desktop|local|local_gpu) cmd_iniciar "$1" ;;
     sim) cmd_lanzar sim "${2:-}" ;;
     robot) cmd_lanzar robot "${2:-}" ;;
+    can) shift; cmd_can "$@" ;;
     terminal) cmd_terminal ;;
     compilar) cmd_compilar ;;
     parar) cmd_parar ;;
