@@ -108,10 +108,14 @@ Una pareja usa un único `move_group` y un único RViz. Los robots reales de una
 
 Cada cuerpo OpenArm es un robot con **dos brazos de 7 articulaciones** (izquierdo y derecho) y una pinza cada uno. La simulación usa mock hardware; el robot real usa el plugin `openarm_hardware` de Enactic (sobre la librería `openarm_can`) con un bus CAN-FD por brazo.
 
-| Cuerpo | Brazos (`ControlRobot`) | Simulación | Robot real (**sin probar con el robot físico**) | Buses CAN (izq / der) |
+| Cuerpo | Brazos (`ControlRobot`) | Simulación | Robot real (en el anfitrión, en este orden) | Buses CAN (izq / der) |
 |---|---|---|---|---|
-| 301 | `301_izq`, `301_der` | `sim_301.launch.py` (`./launcher.sh sim 301`) | `robot_301.launch.py` (`./launcher.sh can 301` y `./launcher.sh robot 301`) | `can1` / `can0` |
-| 302 | `302_izq`, `302_der` | `sim_302.launch.py` (`./launcher.sh sim 302`) | `robot_302.launch.py` (`./launcher.sh can 302` y `./launcher.sh robot 302`) | `can2` / `can3` |
+| 301 | `301_izq`, `301_der` | `sim_301.launch.py` (`./launcher.sh sim 301`) | `robot_301.launch.py`: `./launcher.sh can 301` y después `./launcher.sh robot 301` (**probado con el robot físico**) | `can1` / `can0` |
+| 302 | `302_izq`, `302_der` | `sim_302.launch.py` (`./launcher.sh sim 302`) | `robot_302.launch.py`: `./launcher.sh can 302` y después `./launcher.sh robot 302` (**sin probar**) | `can2` / `can3` |
+
+> **Buses CAN:** en el 301 el brazo **izquierdo va en `can1`** y el **derecho en `can0`** (canales 2 y 1 del adaptador PCAN-USB Pro FD). Se ha comprobado con el robot: con la asignación anterior (izquierdo en `can0`) los brazos estaban intercambiados y todo se movía en espejo. Los buses del 302 (`can2`/`can3`) no se han comprobado.
+>
+> **El CAN solo funciona en un Linux nativo** (con `local`/`local_gpu`): WSL, Windows y macOS no tienen SocketCAN, así que ahí solo se puede usar la simulación.
 
 Los buses se configuran en `robots.py` (`ROBOTS_OPENARM`). Antes de lanzar el robot real hay que levantarlos en el anfitrión con `./launcher.sh can <id>` (CAN-FD, 1 Mbit/s y 5 Mbit/s de datos por defecto). **Al activarse, el plugin lleva los brazos a la posición cero**: deja espacio libre alrededor. Los pasos completos están en `ros_workspace/src/launcher_robots_lab_robotica/openarm/README.md`, sección "Robot real".
 
@@ -212,7 +216,7 @@ En los PCs del laboratorio o personales con (Linux o WSL con X11) se puede usar 
 | `local` | Arranca el entorno del laboratorio en la pantalla (solo Linux con X11) |
 | `local_gpu` | Igual que `local`, con GPU NVIDIA |
 | `sim <id>` | Lanza la simulación: UR `203`-`206`, parejas `203-204`/`205-206`, u OpenArm `301`/`302` |
-| `robot <id>` | Lanza el robot real: UR `203`-`206`, parejas UR (sin probar) u OpenArm `301`/`302` (antes hay que ejecutar `can <id>`) |
+| `robot <id>` | Lanza el robot real: UR `203`-`206`, parejas UR (sin probar) u OpenArm `301` (probado con el robot físico) y `302` (sin probar). En el OpenArm, antes hay que ejecutar `can <id>` |
 | `can <id> [--bitrate N] [--dbitrate N] [--no-fd]` | Levanta en el anfitrión los buses CAN del OpenArm `301`/`302` (solo Linux nativo; no WSL). Por defecto CAN-FD 1000000/5000000. Equivale a `herramientas/levantar_can.sh <id>` |
 | `terminal` | Abre una terminal dentro del contenedor |
 | `compilar` | Recompila el espacio de trabajo (`colcon build --symlink-install`) |
